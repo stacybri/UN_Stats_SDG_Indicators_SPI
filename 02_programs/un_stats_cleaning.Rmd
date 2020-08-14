@@ -11,6 +11,11 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.height=7, f
 
 library(tidyverse)
 library(here)
+library(ggthemes)
+library(Hmisc)
+library(httr)
+library(patchwork)
+library(ggrepel)
 
 
 #set directories
@@ -32,6 +37,122 @@ iso_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='da
   select(iso3c, date, geoAreaCode) 
 
 ```
+
+```{r programs, eval=FALSE, include=FALSE}
+
+
+#Now map the result
+quality = "high"
+maps <- wbgmaps::wbgmaps[[quality]]
+
+country_metadata <- wbstats::wbcountries()
+
+
+
+spi_mapper  <- function(data, indicator, title) {
+  
+ indicator<-indicator
+
+  map_df <- get(data) %>%
+    filter(date==max(date, na.rm=T)) %>%
+    group_by( country) %>%
+    summarise(across(!! indicator,last)) %>%
+    mutate(data_available=TRUE) %>%
+    right_join(country_metadata) %>%
+    mutate(data_available=if_else(is.na(data_available), FALSE, data_available))    
+  
+  
+   p1 <- ggplot() +
+    geom_map(data = map_df, aes(map_id = iso3c, fill = data_available), map = maps$countries) + 
+    geom_polygon(data = maps$disputed, aes(long, lat, group = group, map_id = id), fill = "grey80") + 
+    geom_polygon(data = maps$lakes, aes(long, lat, group = group), fill = "white")  +
+     geom_path(data = maps$boundaries,
+               aes(long, lat, group = group),
+               color = "white",
+               size = 0.1,
+               lineend = maps$boundaries$lineend,
+              linetype = maps$boundaries$linetype) +
+    scale_x_continuous(expand = c(0, 0), limits = standard_crop_wintri()$xlim) +
+    scale_y_continuous(expand = c(0, 0), limits = standard_crop_wintri()$ylim) +
+    scale_fill_brewer(
+      name='Data Available',
+      palette='blue',
+      na.value='gray'
+    )  +
+    coord_equal() +
+    theme_map(base_size=12) +
+    labs(
+      title=str_wrap(title,100),
+      subtitle= 'Source: UNSD',
+      caption = 'Source: SPI Indicators Raw Data.'
+    )
+  
+  #add histogram by region 
+  p2 <- map_df %>%
+    group_by(region) %>%
+    filter(region!='Aggregates') %>%
+    mutate(Score=100*mean(data_available),
+           Label = paste(sum(data_available),'/',n(), sep="")) %>%
+    ggplot(aes(x=Score, y=region, fill=region)) +
+      geom_bar(stat="identity",position='dodge') +
+      geom_text(aes(label=Label)) +
+      labs(
+      title=str_wrap(paste(title, 'By Region', sep=" - "),100),
+      caption = 'Source: UNSD',
+      subtitle= 'Data Point is for last year available (usually 2019)'
+      ) +
+      theme_bw()
+
+  #add histogram by region 
+  p3 <- map_df %>%
+    group_by(income) %>%
+    filter(region!='Aggregates') %>%
+    mutate(Score=100*mean(data_available),
+           Label = paste(sum(data_available),'/',n(), sep="")) %>%
+    ggplot(aes(x=Score, y=region, fill=income)) +
+      geom_bar(stat="identity",position='dodge') +
+      geom_text(aes(label=Label)) +
+      labs(
+      title=str_wrap(paste(title, 'By Income', sep=" - "),100),
+      caption = 'Source: UNSD',
+      subtitle= 'Data Point is for last year available (usually 2019)'
+      ) +
+      theme_bw()  
+  # #add line graph over time
+  p4 <- get(data)  %>%
+    mutate(data_available=TRUE) %>%
+    right_join(spi_df_empty) %>%
+    group_by( date) %>%
+    mutate(data_available=if_else(is.na(data_available), FALSE, data_available)) %>%
+    mutate(Score=100*mean(data_available),
+           Label = paste(sum(data_available),'/',n(), sep="")) %>%
+    ungroup() %>%
+    ggplot(aes(y=Score, x=date)) +
+      geom_point() +
+      geom_line(fill='blue') +
+      # geom_text_repel(aes(label=Label)) +
+      labs(
+      title=str_wrap(paste(title, 'By Date', sep=" - "),100),
+      caption = 'Source: UNSD'
+      ) +
+      expand_limits(y=c(0,100)) +
+      theme_bw()
+      
+  print(p1)
+  
+  print(p2)
+  
+  print(p3)
+
+  print(p3)
+
+     
+}
+
+
+
+```
+
 
 # Introduction
 
@@ -128,7 +249,7 @@ if (exists('un_sdg_df')) {
 #loop through all sdg indicators and append to a database containing the value, metadata info, and quality measure for each year and couuntry.
 for (series in list_df$code1) {
   print(series)
-  Sys.sleep(10)
+  Sys.sleep(30)
     #create a temporary database that will have the value, metadata info, and quality measure for each year and couuntry.
     indicators_df <- list_df %>% 
       filter(code1==series) %>%
@@ -161,7 +282,7 @@ Below we will produce maps and statistics by region/income group of the SPI Indi
 
 ```{r sdg_goal}
 
-stats_fun <- 
+# stats_fun <- 
 
 ```
 
