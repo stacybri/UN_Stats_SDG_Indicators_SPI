@@ -11,16 +11,7 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.height=7, f
 
 library(tidyverse)
 library(here)
-library(wbggeo)
-library(wbgmaps)
-library(ggthemes)
-library(Hmisc)
-library(httr)
-library(patchwork)
-library(ggrepel)
-library(lubridate)
-library(haven)
-library(rsdmx)
+
 
 #set directories
 dir <- here()
@@ -122,22 +113,68 @@ un_pull <- function(series,start, end) {
     group_by(iso3c, date) %>%
     summarise(ind_value=mean(as.numeric(value), na.rm=T),
               ind_metadata=first(attributes.Nature),
-              quality=mean(quality, na.rm=T)
+              ind_quality=mean(quality, na.rm=T)
               ) %>%
     write_excel_csv(paste(output_dir,'/sdg_data/',series,'.csv',sep=""))
 }  
 
-# test <- un_pull('SI_POV_EMP1','2000','2019')
+#remove this dataframe if it exists
+if (exists('un_sdg_df')) {
+  rm(un_sdg_df)
+}
 
 
-indicators_df <- list_df %>%
-  head(5) %>%
+
+#loop through all sdg indicators and append to a database containing the value, metadata info, and quality measure for each year and couuntry.
+for (series in list_df$code1) {
+  print(series)
+  Sys.sleep(10)
+    #create a temporary database that will have the value, metadata info, and quality measure for each year and couuntry.
+    indicators_df <- list_df %>% 
+      filter(code1==series) %>%
       mutate(
       values = map(
         code1,
-        un_pull,'2000','2019' ) 
-      )
+        un_pull,'2000','2019' )
+      ) %>%
+      unnest(values) %>%
+      select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality)
+    
+    #now append it to the overall database
+    if (!exists('un_sdg_df')) {
+      un_sdg_df <- indicators_df 
+    } else if (exists('un_sdg_df')) {
+      un_sdg_df <- un_sdg_df %>%
+        bind_rows(indicators_df)
+      }
+      
+}
+
+#save the data file
+write_excel_csv(un_sdg_df, paste(output_dir, 'us_sdg_df.csv',sep=""))
+
 ```
+
+# Summary Statistics by SDG Goal
+
+Below we will produce maps and statistics by region/income group of the SPI Indicators based on the UN SDG database.  This will be done according to SDG goal (1-17)
+
+```{r sdg_goal}
+
+stats_fun <- 
+
+```
+
+
+# Summary Statistics by SDG Group (Social, Economic, Environmental, Institutional)
+
+Below we will produce maps and statistics by region/income group of the SPI Indicators based on the UN SDG database. This will be done by the following classification:
+
+* Social Statistics (SDG goal 1-6)
+* Economic Statistics (SDG goal 7-12)
+* Environmental Staistics (SDG goal 13-15)
+* Institutional Statistics (SDG goal 16-17)
+
 
 
 
