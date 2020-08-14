@@ -1,0 +1,142 @@
+---
+title: "UN Data Pull and Cleaning"
+author: "Brian Stacy"
+date: "8/14/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.height=7, fig.width=10)
+
+library(tidyverse)
+library(here)
+library(wbggeo)
+library(wbgmaps)
+library(ggthemes)
+library(Hmisc)
+library(httr)
+library(patchwork)
+library(ggrepel)
+library(lubridate)
+library(haven)
+library(rsdmx)
+
+#set directories
+dir <- here()
+
+raw_dir <- paste(dir, '01_raw_data', sep="/")
+output_dir <- paste(dir, '03_output_data', sep="/")
+
+
+#read list of iso3c codes for matching from UN (https://unstats.un.org/unsd/methodology/m49/)
+iso3c <- read_csv(paste(raw_dir,'iso_codes.csv', sep="/"),
+                  col_types=list(col_character(), col_character(), col_character()))
+
+span <- c(2004:2019)
+
+#now create dataframe for merging from 2004 to 2019
+iso_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='date') %>%
+  mutate(date=as.numeric(date)+span[1]-1) %>%
+  select(iso3c, date, geoAreaCode) 
+
+```
+
+# Introduction
+
+This R Markdown file will do the following:
+
+  1. Download the latest SDG indicator data from UN Stats (https://unstats.un.org/sdgs/indicators/en/#) using their API   
+  
+  2. Transform the data so that for each indicator we can create a score documenting whether a value exists for the country in a year, whether the value is based on country data, country data adjusted, estimated, or modelled data according the UN Stats metadata. **This will only include tier 1 indicators**.    
+  
+  3. Combine the resulting data into a single file for use in the Statistical Performance Indicators dashboard and index
+
+# UN Stats Database
+
+Below is a paraphrased description from the UN stats webpage (https://unstats.un.org/sdgs/indicators/indicators-list/):
+
+The global indicator framework for Sustainable Development Goals was developed by the Inter-Agency and Expert Group on SDG Indicators (IAEG-SDGs) and agreed upon at the 48th session of the United Nations Statistical Commission held in March 2017.
+
+The global indicator framework includes 231 unique indicators. Please note that the total number of indicators listed in the global indicator framework of SDG indicators is 247. However, twelve indicators repeat under two or three different targets.
+
+For each value of the indicator, the responsible international agency has been requested to indicate whether the national data were adjusted, estimated, modelled or are the result of global monitoring. The “nature” of the data in the SDG database is determined as follows:
+
+
+  * Country data (C): Produced and disseminated by the country (including data adjusted by the country to meet international standards);    
+  
+  * Country data adjusted (CA): Produced and provided by the country, but adjusted by the international agency for international comparability to comply with internationally agreed standards, definitions and classifications;    
+  
+  * Estimated (E): Estimated based on national data, such as surveys or administrative records, or other sources but on the same variable being estimated, produced by the international agency when country data for some year(s) is not available, when multiple sources exist, or when there are data quality issues;    
+  
+  * Modelled (M): Modelled by the agency on the basis of other covariates when there is a complete lack of data on the variable being estimated;    
+  
+  * Global monitoring data (G): Produced on a regular basis by the designated agency for global monitoring, based on country data. There is no corresponding figure at the country level.
+
+# Scoring
+
+For each indicator, we will produce a value for each country with the following coding scheme:    
+
+  * **1 Point**: Indicator exists and the value is based on the **country** data    
+  * **0.75 Points**: Indicator exists and the value is based on **country data adjusted**    
+  * **0.5 Points**: Indicator exists and the value is based on **estimated or Global Monitoring** data   
+  * **0.25 Points**: Indicator exists and the value is based on **modelled** data   
+  * **0 Points**: Indicator **does not exists**
+  
+  
+# API
+
+Now we will pull data from the UN Stats API (https://unstats.un.org/SDGAPI/swagger/).  We will keep only the tier 1 indicators
+
+```{r api_indicators}
+
+#get a list of all SDG indicators
+indicators_url <- 'https://unstats.un.org/SDGAPI/v1/sdg/Indicator/List'
+
+#bring in the list of indicators
+list_df <- jsonlite::fromJSON(indicators_url, flatten = TRUE) %>%
+  as_tibble() %>%
+  unnest(keep_empty = TRUE) %>%
+  filter(tier==1) # keep just the tier 1 indicators
+
+```
+
+```{r api_download}
+
+# now we will loop through the list of indicators and download the SDG databases
+
+#define function to pull data from UN Stats and return
+un_pull <- function(series,start, end) {
+  jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&&areaCode=%5B',start,'%2C',end,'%5D&pageSize=10000',sep=""), flatten = TRUE)$data %>%
+    as_tibble() %>%
+    mutate(date=timePeriodStart) %>%
+    right_join(iso_empty) %>%
+    mutate(available=!is.na(value),  #check whether indicator is available
+           quality=case_when(
+             (available & attributes.Nature=='C') ~ 1,
+             (available & attributes.Nature=='CA') ~ 0.75,
+             (available & (attributes.Nature=='E' | attributes.Nature=='G')) ~ 0.5,
+             (available & attributes.Nature=='M') ~ 0.25,
+             !available ~ 0
+           )) %>%
+    group_by(iso3c, date) %>%
+    summarise(
+              quality=mean(quality, na.rm=T)
+              )
+}  
+
+# test <- un_pull('SI_POV_EMP1','2000','2019')
+
+
+indicators_df <- list_df %>%
+  head(5) %>%
+      mutate(
+      values = map(
+        code1,
+        un_pull,'2000','2019' ) 
+      )
+```
+
+
+
+  
