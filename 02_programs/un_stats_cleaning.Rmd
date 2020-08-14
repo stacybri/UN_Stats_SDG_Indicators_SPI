@@ -120,7 +120,8 @@ un_pull <- function(series,start, end) {
              !available ~ 0
            )) %>%
     group_by(iso3c, date) %>%
-    summarise(
+    summarise(ind_value=mean(as.numeric(value), na.rm=T),
+              ind_metadata=first(attributes.Nature),
               quality=mean(quality, na.rm=T)
               )
 }  
