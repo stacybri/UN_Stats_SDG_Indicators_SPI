@@ -374,7 +374,7 @@ summary {
 <p>This R Markdown file will do the following:</p>
 <ol style="list-style-type: decimal">
 <li><p>Download the latest SDG indicator data from UN Stats (<a href="https://unstats.un.org/sdgs/indicators/en/#" class="uri">https://unstats.un.org/sdgs/indicators/en/#</a>) using their API</p></li>
-<li><p>Transform the data so that for each indicator we can create a score documenting whether a value exists for the country in a year, whether the value is based on country data, country data adjusted, estimated, or modelled data according the UN Stats metadata.</p></li>
+<li><p>Transform the data so that for each indicator we can create a score documenting whether a value exists for the country in a year, whether the value is based on country data, country data adjusted, estimated, or modelled data according the UN Stats metadata. <strong>This will only include tier 1 indicators</strong>.</p></li>
 <li><p>Combine the resulting data into a single file for use in the Statistical Performance Indicators dashboard and index</p></li>
 </ol>
 </div>
@@ -400,12 +400,58 @@ summary {
 </li>
 <li><strong>0.75 Points</strong>: Indicator exists and the value is based on <strong>country data adjusted</strong><br />
 </li>
-<li><strong>0.5 Points</strong>: Indicator exists and the value is based on <strong>estimated</strong> data<br />
+<li><strong>0.5 Points</strong>: Indicator exists and the value is based on <strong>estimated or Global Monitoring</strong> data<br />
 </li>
 <li><strong>0.25 Points</strong>: Indicator exists and the value is based on <strong>modelled</strong> data<br />
 </li>
 <li><strong>0 Points</strong>: Indicator <strong>does not exists</strong></li>
 </ul>
+</div>
+<div id="api" class="section level1">
+<h1>API</h1>
+<p>Now we will pull data from the UN Stats API (<a href="https://unstats.un.org/SDGAPI/swagger/" class="uri">https://unstats.un.org/SDGAPI/swagger/</a>). We will keep only the tier 1 indicators</p>
+<pre class="r"><code>#get a list of all SDG indicators
+indicators_url &lt;- 'https://unstats.un.org/SDGAPI/v1/sdg/Indicator/List'
+
+#bring in the list of indicators
+list_df &lt;- jsonlite::fromJSON(indicators_url, flatten = TRUE) %&gt;%
+  as_tibble() %&gt;%
+  unnest(keep_empty = TRUE) %&gt;%
+  filter(tier==1) # keep just the tier 1 indicators</code></pre>
+<pre class="r"><code># now we will loop through the list of indicators and download the SDG databases
+
+#define function to pull data from UN Stats and return
+un_pull &lt;- function(series,start, end) {
+  jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&amp;&amp;areaCode=%5B',start,'%2C',end,'%5D&amp;pageSize=10000',sep=&quot;&quot;), flatten = TRUE)$data %&gt;%
+    as_tibble() %&gt;%
+    mutate(date=timePeriodStart) %&gt;%
+    right_join(iso_empty) %&gt;%
+    mutate(available=!is.na(value),  #check whether indicator is available
+           quality=case_when(
+             (available &amp; attributes.Nature=='C') ~ 1,
+             (available &amp; attributes.Nature=='CA') ~ 0.75,
+             (available &amp; (attributes.Nature=='E' | attributes.Nature=='G')) ~ 0.5,
+             (available &amp; attributes.Nature=='M') ~ 0.25,
+             !available ~ 0
+           )) %&gt;%
+    group_by(iso3c, date) %&gt;%
+    summarise(ind_value=mean(as.numeric(value), na.rm=T),
+              ind_metadata=first(attributes.Nature),
+              quality=mean(quality, na.rm=T)
+              ) %&gt;%
+    write_excel_csv(paste(output_dir,'/sdg_data/',series,'.csv',sep=&quot;&quot;))
+}  
+
+# test &lt;- un_pull('SI_POV_EMP1','2000','2019')
+
+
+indicators_df &lt;- list_df %&gt;%
+  head(5) %&gt;%
+      mutate(
+      values = map(
+        code1,
+        un_pull,'2000','2019' ) 
+      )</code></pre>
 </div>
 
 
