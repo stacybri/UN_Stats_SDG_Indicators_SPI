@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.height=7, f
 
 library(tidyverse)
 library(here)
+library(wbgmaps)
+library(wbggeo)
 library(ggthemes)
 library(Hmisc)
 library(httr)
@@ -53,17 +55,19 @@ spi_mapper  <- function(data, indicator, title) {
   
  indicator<-indicator
 
+ 
+ 
   map_df <- get(data) %>%
-    filter(date==max(date, na.rm=T)) %>%
-    group_by( country) %>%
-    summarise(across(!! indicator,last)) %>%
-    mutate(data_available=TRUE) %>%
-    right_join(country_metadata) %>%
-    mutate(data_available=if_else(is.na(data_available), FALSE, data_available))    
+    filter(between(date,2014,2019) ) %>%
+    filter(goal==indicator) %>%
+    group_by(iso3c) %>%
+    summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+    left_join(country_metadata) %>%
+    filter(!is.na(region))
   
-  
+
    p1 <- ggplot() +
-    geom_map(data = map_df, aes(map_id = iso3c, fill = data_available), map = maps$countries) + 
+    geom_map(data = map_df, aes(map_id = iso3c, fill = ind_quality), map = maps$countries) + 
     geom_polygon(data = maps$disputed, aes(long, lat, group = group, map_id = id), fill = "grey80") + 
     geom_polygon(data = maps$lakes, aes(long, lat, group = group), fill = "white")  +
      geom_path(data = maps$boundaries,
@@ -74,32 +78,30 @@ spi_mapper  <- function(data, indicator, title) {
               linetype = maps$boundaries$linetype) +
     scale_x_continuous(expand = c(0, 0), limits = standard_crop_wintri()$xlim) +
     scale_y_continuous(expand = c(0, 0), limits = standard_crop_wintri()$ylim) +
-    scale_fill_brewer(
-      name='Data Available',
-      palette='blue',
-      na.value='gray'
+    scale_fill_continuous(
+
     )  +
     coord_equal() +
     theme_map(base_size=12) +
     labs(
       title=str_wrap(title,100),
       subtitle= 'Source: UNSD',
-      caption = 'Source: SPI Indicators Raw Data.'
+      caption = 'Source: UNSD'
     )
   
   #add histogram by region 
   p2 <- map_df %>%
     group_by(region) %>%
     filter(region!='Aggregates') %>%
-    mutate(Score=100*mean(data_available),
-           Label = paste(sum(data_available),'/',n(), sep="")) %>%
+    mutate(Score=100*mean(ind_quality),
+           Label = paste(round(Score,0)) %>%
     ggplot(aes(x=Score, y=region, fill=region)) +
       geom_bar(stat="identity",position='dodge') +
       geom_text(aes(label=Label)) +
       labs(
       title=str_wrap(paste(title, 'By Region', sep=" - "),100),
       caption = 'Source: UNSD',
-      subtitle= 'Data Point is for last year available (usually 2019)'
+      subtitle= 'Data Point is average of the last 5 years available (usually starting in 2019)'
       ) +
       theme_bw()
 
@@ -107,25 +109,23 @@ spi_mapper  <- function(data, indicator, title) {
   p3 <- map_df %>%
     group_by(income) %>%
     filter(region!='Aggregates') %>%
-    mutate(Score=100*mean(data_available),
-           Label = paste(sum(data_available),'/',n(), sep="")) %>%
-    ggplot(aes(x=Score, y=region, fill=income)) +
+    mutate(Score=100*mean(ind_quality),
+           Label = paste(round(Score,0)) %>%
+    ggplot(aes(x=Score, y=income, fill=income)) +
       geom_bar(stat="identity",position='dodge') +
       geom_text(aes(label=Label)) +
       labs(
       title=str_wrap(paste(title, 'By Income', sep=" - "),100),
       caption = 'Source: UNSD',
-      subtitle= 'Data Point is for last year available (usually 2019)'
+      subtitle= 'Data Point is average of the last 5 years available (usually starting in 2019)'
       ) +
       theme_bw()  
   # #add line graph over time
-  p4 <- get(data)  %>%
-    mutate(data_available=TRUE) %>%
-    right_join(spi_df_empty) %>%
+  p4 <- get(data)  %>% 
+    filter(goal==indicator) %>%
     group_by( date) %>%
-    mutate(data_available=if_else(is.na(data_available), FALSE, data_available)) %>%
-    mutate(Score=100*mean(data_available),
-           Label = paste(sum(data_available),'/',n(), sep="")) %>%
+    mutate(Score=100*mean(ind_quality, na.rm=T),
+           Label = paste(round(Score,0)) %>%
     ungroup() %>%
     ggplot(aes(y=Score, x=date)) +
       geom_point() +
@@ -144,7 +144,7 @@ spi_mapper  <- function(data, indicator, title) {
   
   print(p3)
 
-  print(p3)
+  print(p4)
 
      
 }
@@ -213,13 +213,15 @@ list_df <- jsonlite::fromJSON(indicators_url, flatten = TRUE) %>%
 
 ```
 
-```{r api_download}
+```{r api_download, include=FALSE}
 
 # now we will loop through the list of indicators and download the SDG databases
 
 #define function to pull data from UN Stats and return
 un_pull <- function(series,start, end) {
-  jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&&areaCode=%5B',start,'%2C',end,'%5D&pageSize=10000',sep=""), flatten = TRUE)$data %>%
+  # jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&timePeriodStart=',start,'&timePeriodEnd=',end,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
+      jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
+
     as_tibble() %>%
     mutate(date=timePeriodStart) %>%
     right_join(iso_empty) %>%
@@ -235,8 +237,7 @@ un_pull <- function(series,start, end) {
     summarise(ind_value=mean(as.numeric(value), na.rm=T),
               ind_metadata=first(attributes.Nature),
               ind_quality=mean(quality, na.rm=T)
-              ) %>%
-    write_excel_csv(paste(output_dir,'/sdg_data/',series,'.csv',sep=""))
+              ) 
 }  
 
 #remove this dataframe if it exists
@@ -244,14 +245,18 @@ if (exists('un_sdg_df')) {
   rm(un_sdg_df)
 }
 
-
+list_df<- list_df[seq(dim(list_df)[1],1),]
 
 #loop through all sdg indicators and append to a database containing the value, metadata info, and quality measure for each year and couuntry.
 for (series in list_df$code1) {
-  print(series)
-  Sys.sleep(30)
+  tryCatch({
+  if (!file.exists(paste(output_dir,'/sdg_data/',series,'.csv',sep=""))) {
+    print(series)
+
+
+  #Sys.sleep(60)
     #create a temporary database that will have the value, metadata info, and quality measure for each year and couuntry.
-    indicators_df <- list_df %>% 
+    indicators_df <- list_df %>%
       filter(code1==series) %>%
       mutate(
       values = map(
@@ -259,20 +264,36 @@ for (series in list_df$code1) {
         un_pull,'2000','2019' )
       ) %>%
       unnest(values) %>%
-      select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality)
-    
-    #now append it to the overall database
+      select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality) %>%
+      write_excel_csv(paste(output_dir,'/sdg_data/',series,'.csv',sep=""))
+
+  #   #now append it to the overall database
     if (!exists('un_sdg_df')) {
-      un_sdg_df <- indicators_df 
+      un_sdg_df <- indicators_df
     } else if (exists('un_sdg_df')) {
       un_sdg_df <- un_sdg_df %>%
         bind_rows(indicators_df)
-      }
-      
+    }
+  }
+
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
 }
 
+
+
+    # un_sdg_df <- list_df %>% 
+    #   mutate(
+    #   values = map(
+    #     code1,
+    #     un_pull,'2000','2019' )
+    #   ) %>%
+    #   unnest(values) %>%
+    #   select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality)
+    
 #save the data file
-write_excel_csv(un_sdg_df, paste(output_dir, 'us_sdg_df.csv',sep=""))
+  
+write_excel_csv(un_sdg_df, paste(output_dir, '/un_sdg_df.csv',sep=""))
 
 ```
 
@@ -281,6 +302,27 @@ write_excel_csv(un_sdg_df, paste(output_dir, 'us_sdg_df.csv',sep=""))
 Below we will produce maps and statistics by region/income group of the SPI Indicators based on the UN SDG database.  This will be done according to SDG goal (1-17)
 
 ```{r sdg_goal}
+
+un_sdg_df <- read_csv(paste(output_dir,'/un_sdg_df.csv',sep=""))
+
+spi_mapper('un_sdg_df', '1','Goal 1')
+spi_mapper('un_sdg_df', '2','Goal 2')
+spi_mapper('un_sdg_df', '3','Goal 3')
+spi_mapper('un_sdg_df', '4','Goal 4')
+spi_mapper('un_sdg_df', '5','Goal 5')
+spi_mapper('un_sdg_df', '6','Goal 6')
+spi_mapper('un_sdg_df', '7','Goal 7')
+spi_mapper('un_sdg_df', '8','Goal 8')
+spi_mapper('un_sdg_df', '9','Goal 9')
+spi_mapper('un_sdg_df', '10','Goal 10')
+spi_mapper('un_sdg_df', '11','Goal 11')
+spi_mapper('un_sdg_df', '12','Goal 12')
+spi_mapper('un_sdg_df', '13','Goal 13')
+spi_mapper('un_sdg_df', '14','Goal 14')
+spi_mapper('un_sdg_df', '15','Goal 15')
+spi_mapper('un_sdg_df', '16','Goal 16')
+spi_mapper('un_sdg_df', '17','Goal 17')
+
 
 # stats_fun <- 
 
