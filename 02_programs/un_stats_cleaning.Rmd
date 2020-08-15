@@ -85,7 +85,7 @@ spi_mapper  <- function(data, indicator, title) {
     theme_map(base_size=12) +
     labs(
       title=str_wrap(title,100),
-      subtitle= 'Source: UNSD',
+      subtitle= 'Data Point is 5 years average since 2019',
       caption = 'Source: UNSD'
     )
   
@@ -101,7 +101,7 @@ spi_mapper  <- function(data, indicator, title) {
       labs(
       title=str_wrap(paste(title, 'By Region', sep=" - "),100),
       caption = 'Source: UNSD',
-      subtitle= 'Data Point is average of the last 5 years available (usually starting in 2019)'
+      subtitle= 'Data Point is 5 years average since 2019'
       ) +
       theme_bw()
 
@@ -117,7 +117,7 @@ spi_mapper  <- function(data, indicator, title) {
       labs(
       title=str_wrap(paste(title, 'By Income', sep=" - "),100),
       caption = 'Source: UNSD',
-      subtitle= 'Data Point is average of the last 5 years available (usually starting in 2019)'
+      subtitle= 'Data Point is 5 years average since 2019'
       ) +
       theme_bw()  
   # #add line graph over time
@@ -250,7 +250,7 @@ list_df<- list_df[seq(dim(list_df)[1],1),]
 #loop through all sdg indicators and append to a database containing the value, metadata info, and quality measure for each year and couuntry.
 for (series in list_df$code1) {
   tryCatch({
-  if (!file.exists(paste(output_dir,'/sdg_data/',series,'.csv',sep=""))) {
+  if (!file.exists(paste(raw_dir,'/sdg_data/',series,'.csv',sep=""))) {
     print(series)
 
 
@@ -265,15 +265,8 @@ for (series in list_df$code1) {
       ) %>%
       unnest(values) %>%
       select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality) %>%
-      write_excel_csv(paste(output_dir,'/sdg_data/',series,'.csv',sep=""))
+      write_excel_csv(paste(raw_dir,'/sdg_data/',series,'.csv',sep=""))
 
-  #   #now append it to the overall database
-    if (!exists('un_sdg_df')) {
-      un_sdg_df <- indicators_df
-    } else if (exists('un_sdg_df')) {
-      un_sdg_df <- un_sdg_df %>%
-        bind_rows(indicators_df)
-    }
   }
 
 }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
@@ -282,18 +275,34 @@ for (series in list_df$code1) {
 
 
 
-    # un_sdg_df <- list_df %>% 
-    #   mutate(
-    #   values = map(
-    #     code1,
-    #     un_pull,'2000','2019' )
-    #   ) %>%
-    #   unnest(values) %>%
-    #   select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality)
+
+```
+
+
+```{r save}
+
+for (series in list_df$code1) {
     
+  #read in files
+  
+  temp <- read_csv(paste(raw_dir,'/sdg_data/',series,'.csv',sep=""))
+  
+  #   #now append it to the overall database
+  if (!exists('un_sdg_df')) {
+    un_sdg_df <- temp
+  } else if (exists('un_sdg_df')) {
+    un_sdg_df <- un_sdg_df %>%
+      bind_rows(temp)
+  }
+  
+  
+}
+
+
 #save the data file
   
 write_excel_csv(un_sdg_df, paste(output_dir, '/un_sdg_df.csv',sep=""))
+
 
 ```
 
