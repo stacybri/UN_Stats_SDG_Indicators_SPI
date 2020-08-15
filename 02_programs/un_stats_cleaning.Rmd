@@ -2,7 +2,9 @@
 title: "UN Data Pull and Cleaning"
 author: "Brian Stacy"
 date: "8/14/2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 
@@ -40,7 +42,7 @@ iso_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='da
 
 ```
 
-```{r programs, eval=FALSE, include=FALSE}
+```{r programs, include=FALSE}
 
 
 #Now map the result
@@ -94,7 +96,7 @@ spi_mapper  <- function(data, indicator, title) {
     group_by(region) %>%
     filter(region!='Aggregates') %>%
     mutate(Score=100*mean(ind_quality),
-           Label = paste(round(Score,0)) %>%
+           Label = paste(round(Score,0))) %>%
     ggplot(aes(x=Score, y=region, fill=region)) +
       geom_bar(stat="identity",position='dodge') +
       geom_text(aes(label=Label)) +
@@ -105,12 +107,13 @@ spi_mapper  <- function(data, indicator, title) {
       ) +
       theme_bw()
 
-  #add histogram by region 
+#add histogram by region 
+
   p3 <- map_df %>%
     group_by(income) %>%
     filter(region!='Aggregates') %>%
     mutate(Score=100*mean(ind_quality),
-           Label = paste(round(Score,0)) %>%
+           Label = paste(round(Score,0))) %>%
     ggplot(aes(x=Score, y=income, fill=income)) +
       geom_bar(stat="identity",position='dodge') +
       geom_text(aes(label=Label)) +
@@ -120,12 +123,13 @@ spi_mapper  <- function(data, indicator, title) {
       subtitle= 'Data Point is 5 years average since 2019'
       ) +
       theme_bw()  
+    
   # #add line graph over time
   p4 <- get(data)  %>% 
     filter(goal==indicator) %>%
     group_by( date) %>%
     mutate(Score=100*mean(ind_quality, na.rm=T),
-           Label = paste(round(Score,0)) %>%
+           Label = paste(round(Score,0))) %>%
     ungroup() %>%
     ggplot(aes(y=Score, x=date)) +
       geom_point() +
@@ -240,10 +244,7 @@ un_pull <- function(series,start, end) {
               ) 
 }  
 
-#remove this dataframe if it exists
-if (exists('un_sdg_df')) {
-  rm(un_sdg_df)
-}
+
 
 list_df<- list_df[seq(dim(list_df)[1],1),]
 
@@ -281,20 +282,33 @@ for (series in list_df$code1) {
 
 ```{r save}
 
+#remove this dataframe if it exists
+if (exists('un_sdg_df')) {
+  rm(un_sdg_df)
+}
+
 for (series in list_df$code1) {
     
   #read in files
-  
-  temp <- read_csv(paste(raw_dir,'/sdg_data/',series,'.csv',sep=""))
-  
-  #   #now append it to the overall database
-  if (!exists('un_sdg_df')) {
-    un_sdg_df <- temp
-  } else if (exists('un_sdg_df')) {
-    un_sdg_df <- un_sdg_df %>%
-      bind_rows(temp)
+  if (file.exists(paste(raw_dir,'/sdg_data/',series,'.csv',sep=""))) {
+    temp <- read_csv(paste(raw_dir,'/sdg_data/',series,'.csv',sep="")) %>%
+      mutate(
+        date=as.numeric(date), 
+        goal=as.character(goal), 
+        target=as.character(target), 
+        code==as.character(code), 
+        code1=as.character(code1), 
+        description1=as.character(description1)
+      )
+    
+    #   #now append it to the overall database
+    if (!exists('un_sdg_df')) {
+      un_sdg_df <- temp
+    } else if (exists('un_sdg_df')) {
+      un_sdg_df <- un_sdg_df %>%
+        bind_rows(temp)
+    }
   }
-  
   
 }
 
@@ -349,5 +363,21 @@ Below we will produce maps and statistics by region/income group of the SPI Indi
 
 
 
+```{r groups}
+
+un_sdg_df_grp <- un_sdg_df %>%
+  mutate(goal=case_when(
+    (goal == '1'| goal == '2' | goal == '3' | goal == '4' | goal == '5' | goal == '6') ~ 'social',
+    (goal == '7' | goal == '8' | goal == '9' | goal == '10' | goal == '11' | goal == '12') ~ 'economic',
+    (goal == '13' | goal == '14' | goal == '15') ~ 'environmental',
+    (goal == '16' | goal == '17') ~ 'institutinoal'
+  ))
+
+spi_mapper('un_sdg_df_grp', 'social','Economic Goals (SDG 1-6)')
+spi_mapper('un_sdg_df_grp', 'economic','Economic Statistics (SDG goal 7-12)')
+spi_mapper('un_sdg_df_grp', 'environmental','Environmental Staistics (SDG goal 13-15)')
+spi_mapper('un_sdg_df_grp', 'institutinoal','Institutional Statistics (SDG goal 16-17)')
+
+```
 
   

@@ -80,7 +80,6 @@
 !/Data/**/*.xlsx
 
 # csv files
-!/03_output_data/*.csv
 
 
 
