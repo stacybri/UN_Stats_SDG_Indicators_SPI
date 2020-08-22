@@ -20,8 +20,8 @@ library(Hmisc)
 library(httr)
 library(patchwork)
 library(ggrepel)
-
-
+library(DT)
+library(plotly)
 #set directories
 dir <- here()
 
@@ -63,7 +63,7 @@ spi_mapper  <- function(data, indicator, title) {
     filter(between(date,2014,2019) ) %>%
     filter(goal==indicator) %>%
     group_by(iso3c) %>%
-    summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+    summarise(ind_quality=100*mean(ind_quality, na.rm=T)) %>%
     left_join(country_metadata) %>%
     filter(!is.na(region))
   
@@ -80,22 +80,22 @@ spi_mapper  <- function(data, indicator, title) {
               linetype = maps$boundaries$linetype) +
     scale_x_continuous(expand = c(0, 0), limits = standard_crop_wintri()$xlim) +
     scale_y_continuous(expand = c(0, 0), limits = standard_crop_wintri()$ylim) +
-    scale_fill_continuous(
-
-    )  +
+  scale_fill_distiller(palette = "RdYlGn",
+                       direction=1)  +
     coord_equal() +
     theme_map(base_size=12) +
     labs(
       title=str_wrap(title,100),
-      subtitle= 'Data Point is 5 years average since 2019',
-      caption = 'Source: UNSD'
+      subtitle= '5 Year Average SPI Score (Scale 0-100)',
+      caption = 'Source: UNSD',
+      fill= 'Indicator SPI Score'
     )
   
   #add histogram by region 
   p2 <- map_df %>%
     group_by(region) %>%
     filter(region!='Aggregates') %>%
-    mutate(Score=100*mean(ind_quality),
+    mutate(Score=mean(ind_quality),
            Label = paste(round(Score,0))) %>%
     ggplot(aes(x=Score, y=region, fill=region)) +
       geom_bar(stat="identity",position='dodge') +
@@ -103,16 +103,17 @@ spi_mapper  <- function(data, indicator, title) {
       labs(
       title=str_wrap(paste(title, 'By Region', sep=" - "),100),
       caption = 'Source: UNSD',
-      subtitle= 'Data Point is 5 years average since 2019'
-      ) +
-      theme_bw()
-
+      subtitle= '5 Year Average SPI Score (Scale 0-100)',
+      fill= 'Indicator SPI Score'
+      ) + 
+      expand_limits(x=c(0,100)) +
+      theme_bw() 
 #add histogram by region 
 
   p3 <- map_df %>%
     group_by(income) %>%
     filter(region!='Aggregates') %>%
-    mutate(Score=100*mean(ind_quality),
+    mutate(Score=mean(ind_quality),
            Label = paste(round(Score,0))) %>%
     ggplot(aes(x=Score, y=income, fill=income)) +
       geom_bar(stat="identity",position='dodge') +
@@ -120,18 +121,21 @@ spi_mapper  <- function(data, indicator, title) {
       labs(
       title=str_wrap(paste(title, 'By Income', sep=" - "),100),
       caption = 'Source: UNSD',
-      subtitle= 'Data Point is 5 years average since 2019'
+      subtitle= '5 Year Average SPI Score (Scale 0-100)',
+      fill= 'Indicator SPI Score'
       ) +
+      expand_limits(x=c(0,100)) +
       theme_bw()  
     
   # #add line graph over time
   p4 <- get(data)  %>% 
     filter(goal==indicator) %>%
-    group_by( date) %>%
+    left_join(country_metadata) %>%
+    group_by(region,  date) %>%
     mutate(Score=100*mean(ind_quality, na.rm=T),
            Label = paste(round(Score,0))) %>%
     ungroup() %>%
-    ggplot(aes(y=Score, x=date)) +
+    ggplot(aes(y=Score, x=date, color=region)) +
       geom_point() +
       geom_line(fill='blue') +
       # geom_text_repel(aes(label=Label)) +
@@ -193,11 +197,8 @@ For each value of the indicator, the responsible international agency has been r
 
 For each indicator, we will produce a value for each country with the following coding scheme:    
 
-  * **1 Point**: Indicator exists and the value is based on the **country** data    
-  * **0.75 Points**: Indicator exists and the value is based on **country data adjusted**    
-  * **0.5 Points**: Indicator exists and the value is based on **estimated or Global Monitoring** data   
-  * **0.25 Points**: Indicator exists and the value is based on **modelled** data   
-  * **0 Points**: Indicator **does not exists**
+  * **1 Point**: Indicator exists and the value is based on the **country**, **country data adjusted**, or **estimated or Global Monitoring** data    
+  * **0 Points**: Indicator **based on modelled data or does not exists**
   
   
 # API
@@ -207,13 +208,15 @@ Now we will pull data from the UN Stats API (https://unstats.un.org/SDGAPI/swagg
 ```{r api_indicators}
 
 #get a list of all SDG indicators
-indicators_url <- 'https://unstats.un.org/SDGAPI/v1/sdg/Indicator/List'
+indicators_url <- 'https://unstats.un.org/SDGAPI/v1/sdg/Indicator/List?pageSize=10000'
 
 #bring in the list of indicators
 list_df <- jsonlite::fromJSON(indicators_url, flatten = TRUE) %>%
   as_tibble() %>%
   unnest(keep_empty = TRUE) %>%
-  filter(tier==1) # keep just the tier 1 indicators
+  filter(tier==1)  # keep just the tier 1 indicators %>%
+  # group_by(code) %>%
+  # filter(row_number()==1)
 
 ```
 
@@ -232,9 +235,9 @@ un_pull <- function(series,start, end) {
     mutate(available=!is.na(value),  #check whether indicator is available
            quality=case_when(
              (available & attributes.Nature=='C') ~ 1,
-             (available & attributes.Nature=='CA') ~ 0.75,
-             (available & (attributes.Nature=='E' | attributes.Nature=='G')) ~ 0.5,
-             (available & attributes.Nature=='M') ~ 0.25,
+             (available & attributes.Nature=='CA') ~ 1,
+             (available & (attributes.Nature=='E' | attributes.Nature=='G')) ~ 1,
+             (available & attributes.Nature=='M') ~ 0,
              !available ~ 0
            )) %>%
     group_by(iso3c, date) %>%
@@ -380,4 +383,192 @@ spi_mapper('un_sdg_df_grp', 'institutinoal','Institutional Statistics (SDG goal 
 
 ```
 
+
+```{r country_stats}
+
+stats_df <- un_sdg_df %>%
+  filter(between(date,2015,2019) ) %>%
+    group_by( iso3c, goal,target) %>%
+    summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
+              ind_available=100*max(!is.na(ind_value))
+    ) %>%
+    group_by(iso3c,goal) %>%
+    summarise(ind_quality=round(mean(ind_quality, na.rm=T),1), #get an average of this across countries
+            ind_available=round(mean(ind_available, na.rm=T),1)
+            ) %>%
+  left_join(country_metadata) %>%
+  filter(!is.na(region)) %>%
+  mutate(goal=paste('SDG Goal', goal, sep=" ")) %>%
+  select(iso3c, country,region, income, goal,ind_available, ind_quality)
+
+
+#overall sumstats
+  stats_sum <- un_sdg_df %>%
+    filter(between(date,2015,2019) ) %>%
+    group_by( iso3c, goal,target) %>%
+    summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
+              ind_available=100*max(!is.na(ind_value))
+    ) %>%
+    group_by(goal) %>%
+    summarise(ind_quality=round(mean(ind_quality, na.rm=T),1), #get an average of this across countries
+            ind_available=round(mean(ind_available, na.rm=T),1)
+            ) %>%
+    arrange(as.numeric(goal)) %>%
+    mutate(goal=paste('SDG Goal', goal, sep=" ")) %>%
+    select(goal,  ind_available, ind_quality)
   
+          DT::datatable(stats_sum, caption="Table of Overall Scores by Goal in 2019",
+                      rownames=FALSE,
+                      colnames = c("SDG Goal",'Percent Indicators Available over 5 Year Period (2015-19)', "5 Year Average of SPI Score (Availability + Quality) Measure (Scale 0-100)"),
+                      class='cell-border stripe',
+                      escape = FALSE,
+                      extensions = c ('Buttons', 'FixedHeader'), options=list(
+                          dom = 'Bfrtip',
+                          buttons = c('copy', 'csv', 'excel'),
+                          pageLength = 60,
+                          scrollX = TRUE,
+                          paging=TRUE,
+                          ordering=F))
+
+
+        DT::datatable(stats_df, caption="Table of Scores by Country in 2019",
+                      rownames=FALSE,
+                      colnames = c("ISO3c", "Country Name","Region", "Income", "SDG Goal",'Percent Indicators Available over 5 Year Period (2015-19)', "5 Year Average of SPI Score (Availability + Quality) Measure (Scale 0-100)"),
+                      class='cell-border stripe',
+                      escape = FALSE,
+                      extensions = c ('Buttons', 'FixedHeader'), options=list(
+                          dom = 'Bfrtip',
+                          buttons = c('copy', 'csv', 'excel'),
+                          pageLength = 60,
+                          scrollX = TRUE,
+                          paging=TRUE,
+                          ordering=F))
+
+
+```
+
+  
+  # Comparison with the AKI
+  
+  Next we will produce correlations between these scores and the scores for countries based on the availability of key indicators metric.  The indicators were pulled to represent one from each of the first 10 SDGs, 3 environmental indicators, and 2 indicators representing economic statistcs
+  
+  
+## Indicator 3.1: social statistics  
+- AKI 3.1: Poverty headcount ratio at $1.90 a day (2011 PPP) (% of population)  
+- AKI 3.2: Food Insecurity Experience Scale 
+- AKI 3.3: Mortality rate, under-5 (per 1,000 live births)  
+- AKI 3.4: Proportion of children and young people in grades 2 or 3 achieving at least a minimum proficiency level in reading and mathematics, by sex.  
+- AKI 3.5: Maternal Mortality
+- AKI 3.6: People using safely managed drinking water services (% of population)  
+
+## Indicator 3.2: economic statistics 
+- AKI 3.7: Access to electricity (% of population)  
+- AKI 3.8: Unemployment, total (% of total labor force)  
+- AKI 3.9: Manufacturing, value added (% of GDP)  
+- AKI 3.10: Annualized average growth rate in per capita real survey mean consumption or income, bottom 40% of population (%)  
+- AKI 3.14: Quarterly GDP
+
+## Indicator 3.3 environmental statistics     
+- AKI 3.11: Level of water stress: freshwater withdrawal as a proportion of available freshwater resources  
+- AKI 3.12: Renewable energy consumption (% of total final energy consumption)  
+- AKI 3.13: Households and NPISHs Final consumption expenditure (current LCU) 
+
+## Indicator 3.4: institutional statistics 
+- AKI 3.15: Debt service (PPG and IMF only, % of exports of goods, services and primary income) 
+
+We will produce scatter plots between these indicators and the indicators pulled from UNSD.
+
+```{r aki_corr, fig.height=10, fig.width=10}
+
+#read in the SPI data with the AKI
+aki_df <- read_csv(paste(raw_dir, 'SPI_data.csv', sep='/')) %>%
+  select(country, iso3c, date, starts_with('SPI.D3')) %>%
+  filter(date==2019)
+
+title <- "Scatterplot of SPI Score for SDG Goal 1 Based on Average Score of All SDG Indicators Versus Score Based on AKI"
+
+sdg <- 'SDG Goal 1'
+aki <- 'SPI.D3.POV'
+
+combined_df <- stats_df %>%
+  filter(goal==!! sdg) %>%
+  left_join(aki_df) %>%
+  mutate(across({{aki}}, ~100*., .names="ind_quality_aki")) %>%
+  select(country, iso3c, income, ind_quality, ind_quality_aki)
+
+plot_ly(data=combined_df,
+        x=~ind_quality, y=~ind_quality_aki,
+        text=~country,
+        color = ~income,
+        type='scatter') %>%
+  layout(title=str_wrap(paste('Scatterplot of SPI Score for', sdg, 'Based on Average Score of All SDG Indicators Versus Score Based on AKI'),70),
+         xaxis=list(title='Average Score Across All SDG Indicators'),
+         yaxis=list(title='Availability of Key Indicator Score'))
+
+
+plot_fun <-  function(sdg, aki) {
+  
+
+
+combined_df <- stats_df %>%
+  filter(goal==!! sdg) %>%
+  left_join(aki_df) %>%
+  mutate(across({{aki}}, ~100*., .names="ind_quality_aki")) %>%
+  select(country, iso3c, income, ind_quality, ind_quality_aki)
+
+p<- plot_ly(data=combined_df,
+        x=~ind_quality, y=~ind_quality_aki,
+        text=~country,
+        color = ~income,
+        type='scatter') %>%
+  layout(title=str_wrap(paste('Scatterplot of SPI Score for', sdg, 'Based on Average Score of All SDG Indicators Versus Score Based on AKI'),70),
+         xaxis=list(title='Average Score Across All SDG Indicators'),
+         yaxis=list(title='Availability of Key Indicator Score'))
+
+p
+
+
+}
+
+sum_fun <- function(sdg, aki) {
+  
+
+
+combined_df <- stats_df %>%
+  filter(goal==!! sdg) %>%
+  left_join(aki_df) %>%
+  mutate(across({{aki}}, ~100*., .names="ind_quality_aki")) %>%
+  select(country, iso3c, income, ind_quality, ind_quality_aki)
+  
+print(cor(combined_df$ind_quality, combined_df$ind_quality_aki, use='pairwise.complete.obs'))
+print(summary(combined_df$ind_quality))
+print(summary(combined_df$ind_quality_aki))
+  
+}
+
+plot_fun("SDG Goal 1", 'SPI.D3.POV')
+plot_fun("SDG Goal 2", 'SPI.D3.FIES')
+plot_fun("SDG Goal 3", 'SPI.D3.CHLD.MORT')
+plot_fun("SDG Goal 4", 'SPI.D3.SE.LPV.PRIM.BMP')
+plot_fun("SDG Goal 5", 'SPI.D3.MMRT')
+plot_fun("SDG Goal 6", 'SPI.D3.SH.H2O.SMDW.ZS')
+plot_fun("SDG Goal 7", 'SPI.D3.ELEC')
+plot_fun("SDG Goal 8", 'SPI.D3.SL.UEM.TOTL.NE.ZS')
+plot_fun("SDG Goal 9", 'SPI.D3.NV.IND.MANF.ZS')
+plot_fun("SDG Goal 10", 'SPI.D3.SI.SPR.PC40.ZG')
+
+sum_fun("SDG Goal 1", 'SPI.D3.POV')
+sum_fun("SDG Goal 2", 'SPI.D3.FIES')
+sum_fun("SDG Goal 3", 'SPI.D3.CHLD.MORT')
+sum_fun("SDG Goal 4", 'SPI.D3.SE.LPV.PRIM.BMP')
+sum_fun("SDG Goal 5", 'SPI.D3.MMRT')
+sum_fun("SDG Goal 6", 'SPI.D3.SH.H2O.SMDW.ZS')
+sum_fun("SDG Goal 7", 'SPI.D3.ELEC')
+sum_fun("SDG Goal 8", 'SPI.D3.SL.UEM.TOTL.NE.ZS')
+sum_fun("SDG Goal 9", 'SPI.D3.NV.IND.MANF.ZS')
+sum_fun("SDG Goal 10", 'SPI.D3.SI.SPR.PC40.ZG')
+
+
+
+```
+
