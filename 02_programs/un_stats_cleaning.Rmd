@@ -464,8 +464,8 @@ un_aki_fun <- function(date_start, date_end) {
   temp <- un_sdg_df %>%
     filter(between(date,date_start,date_end) ) %>%
       group_by( iso3c, goal,target) %>%
-      summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
-                ind_available=100*max(!is.na(ind_value))
+      summarise(ind_quality=max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
+                ind_available=max(!is.na(ind_value))
       ) %>%
       group_by(iso3c,goal) %>%
       summarise(ind_quality=round(mean(ind_quality, na.rm=T),1), #get an average of this across countries
