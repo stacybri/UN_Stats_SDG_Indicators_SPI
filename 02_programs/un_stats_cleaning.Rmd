@@ -402,6 +402,13 @@ stats_df <- un_sdg_df %>%
   select(iso3c, country,region, income, goal,ind_available, ind_quality)
 
 
+stats_df_wide <- stats_df %>%
+  select(iso3c, country,region, income, goal,ind_quality) %>%
+  pivot_wider(names_from = 'goal',
+              values_from='ind_quality')
+
+
+
 #overall sumstats
   stats_sum <- un_sdg_df %>%
     filter(between(date,2015,2019) ) %>%
@@ -447,6 +454,65 @@ stats_df <- un_sdg_df %>%
 
 ```
 
+
+```{r saver}
+
+#function to create scored data
+
+
+un_aki_fun <- function(date_start, date_end) {
+  temp <- un_sdg_df %>%
+    filter(between(date,date_start,date_end) ) %>%
+      group_by( iso3c, goal,target) %>%
+      summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
+                ind_available=100*max(!is.na(ind_value))
+      ) %>%
+      group_by(iso3c,goal) %>%
+      summarise(ind_quality=round(mean(ind_quality, na.rm=T),1), #get an average of this across countries
+              ind_available=round(mean(ind_available, na.rm=T),1)
+              ) %>%
+    left_join(country_metadata) %>%
+    filter(!is.na(region)) %>%
+    select(iso3c, country,region, income, goal,ind_available, ind_quality) %>%
+    mutate(date=date_end)
+  
+  
+  temp %>%
+    select(iso3c,date, country,region, income, goal,ind_quality) %>%
+    pivot_wider(names_from = 'goal',
+                values_from='ind_quality',
+                names_glue = "SPI.D3.{goal}")
+}
+
+#create this database for each year from 2004 to 2019
+for (i in c(2004:2019)) {
+  
+  start=i-4
+  end=i
+  
+  temp_df <- un_aki_fun(start,end)
+  assign(paste('un_aki_',end, sep=""), temp_df)
+}
+
+if (exists('un_aki')) {
+  rm('un_aki')
+}
+#now append together and save
+for (i in c(2004:2019)) {
+  
+  temp<-get(paste('un_aki_',i, sep=""))
+  
+  if (!exists('un_aki')) {
+    un_aki<-temp
+  } else {
+    un_aki<-un_aki %>%
+      bind_rows(temp)
+  }
+}
+
+write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data.csv', sep="/"))
+
+```
   
   # Comparison with the AKI
   
