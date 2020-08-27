@@ -467,6 +467,9 @@ un_aki_fun <- function(date_start, date_end) {
       summarise(ind_quality=max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
                 ind_available=max(!is.na(ind_value))
       ) %>%
+      mutate(ind_quality=if_else(is.na(ind_quality), 0, as.numeric(ind_quality)), #get a measure by country of whether indicator exists at all over 5 years
+                ind_available=if_else(is.na(ind_available), 0, as.numeric(ind_available))
+      ) %>%
       group_by(iso3c,goal) %>%
       summarise(ind_quality=round(mean(ind_quality, na.rm=T),1), #get an average of this across countries
               ind_available=round(mean(ind_available, na.rm=T),1)
