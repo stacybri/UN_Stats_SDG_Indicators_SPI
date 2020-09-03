@@ -80,7 +80,7 @@
 !/Data/**/*.xlsx
 
 # csv files
-
+/**/un_sdg_df.csv
 
 
 # stata files
