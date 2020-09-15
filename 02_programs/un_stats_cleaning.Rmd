@@ -465,7 +465,7 @@ un_aki_fun <- function(date_start, date_end) {
     filter(between(date,date_start,date_end) ) %>%
       mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
       group_by(iso3c,goal) %>%
-      summarise(ind_quality=round(mean(ind_quality),1) #get an average of this across countries
+      summarise(ind_quality=round(mean(ind_quality),3) #get an average of this across countries
               ) %>%
     left_join(country_metadata) %>%
     filter(!is.na(region)) %>%
