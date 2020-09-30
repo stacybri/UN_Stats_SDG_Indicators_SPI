@@ -189,7 +189,7 @@ For each value of the indicator, the responsible international agency has been r
   
   * Estimated (E): Estimated based on national data, such as surveys or administrative records, or other sources but on the same variable being estimated, produced by the international agency when country data for some year(s) is not available, when multiple sources exist, or when there are data quality issues;    
   
-  * Modelled (M): Modelled by the agency on the basis of other covariates when there is a complete lack of data on the variable being estimated;    
+  * Modeled (M): Modeled by the agency on the basis of other covariates when there is a complete lack of data on the variable being estimated;    
   
   * Global monitoring data (G): Produced on a regular basis by the designated agency for global monitoring, based on country data. There is no corresponding figure at the country level.
 
@@ -198,7 +198,7 @@ For each value of the indicator, the responsible international agency has been r
 For each indicator, we will produce a value for each country with the following coding scheme:    
 
   * **1 Point**: Indicator exists and the value is based on the **country**, **country data adjusted**, or **estimated or Global Monitoring** data    
-  * **0 Points**: Indicator **based on modelled data or does not exists**
+  * **0 Points**: Indicator **based on modeled data or does not exists**
   
   
 # API
@@ -240,6 +240,9 @@ un_pull <- function(series,start, end) {
              (available & attributes.Nature=='M') ~ 0,
              !available ~ 0
            )) %>%
+    group_by(date) %>%
+    mutate(available_year=(max(available, na.rm=T)==1),
+           quality=if_else(available_year==FALSE,as.numeric(NA),quality)) %>% #check if indicator is available at all for that year for any country.  If not, then do not penalize countries for not reporting.
     group_by(iso3c, date) %>%
     summarise(ind_value=mean(as.numeric(value), na.rm=T),
               ind_metadata=first(attributes.Nature),
