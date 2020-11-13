@@ -325,6 +325,17 @@ for (series in list_df$code1) {
 }
 
 
+
+
+#read in OECD data for updates based on OECD database
+oecd_df <- read_csv(paste(raw_dir,'/oecd_data/country_data/OECD_data_scored.csv', sep=""))
+
+un_sdg_df <- un_sdg_df %>%
+  mutate(goal=as.numeric(goal)) %>%
+  left_join(oecd_df) %>%
+  mutate(goal=as.character(goal)) %>%
+  mutate(ind_quality=if_else(ind_quality.oecd>ind_quality,ind_quality.oecd,ind_quality, ind_quality )) #replace value with OECD value if it exists
+
 #save the data file
   
 write_excel_csv(un_sdg_df, paste(output_dir, '/un_sdg_df.csv',sep=""))
@@ -340,10 +351,18 @@ Below we will produce maps and statistics by region/income group of the SPI Indi
 
 un_sdg_df <- read_csv(paste(output_dir,'/un_sdg_df.csv',sep=""))
 
+
 spi_mapper('un_sdg_df', '1','Goal 1')
+
+
+
 spi_mapper('un_sdg_df', '2','Goal 2')
+
 spi_mapper('un_sdg_df', '3','Goal 3')
+
+
 spi_mapper('un_sdg_df', '4','Goal 4')
+
 spi_mapper('un_sdg_df', '5','Goal 5')
 spi_mapper('un_sdg_df', '6','Goal 6')
 spi_mapper('un_sdg_df', '7','Goal 7')
@@ -473,13 +492,13 @@ un_aki_fun <- function(date_start, date_end) {
   temp <- un_sdg_df %>%
     filter(between(date,date_start,date_end) ) %>%
     filter(!is.na(ind_quality)) %>%
-    group_by(iso3c, date, code,goal) %>%
+    group_by(iso3c, code,goal) %>%
     summarise(ind_quality=max(ind_quality, na.rm=T),
               ind_value=mean(ind_value, na.rm=T),
               ind_metadata=first(ind_metadata)) %>% #check if any values (even sub-indicators) for indicator
       mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
       group_by(iso3c,goal) %>%
-      summarise(ind_quality=round(mean(ind_quality),3) #get an average of this across countries
+      summarise(ind_quality=round(mean(ind_quality),3) #get whether indicator exists at all in 5 years of this across countries
               ) %>%
     left_join(country_metadata) %>%
     filter(!is.na(region)) %>%
@@ -496,7 +515,7 @@ un_aki_fun <- function(date_start, date_end) {
 
 
 ####
-# 10 Year moving average
+# 10 Year window
 ####
 #create this database for each year from 2004 to 2019 using a 5 year average
 for (i in c(2009:2019)) {
@@ -528,7 +547,7 @@ for (i in c(2009:2019)) {
 write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_10yr.csv', sep="/"))
 
 ####
-# 8 Year moving average
+# 8 Year window
 ####
 #create this database for each year from 2004 to 2019 using a 5 year average
 for (i in c(2007:2019)) {
@@ -560,7 +579,7 @@ for (i in c(2007:2019)) {
 write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_8yr.csv', sep="/"))
 
 ####
-# 5 Year moving average
+# 5 Year window
 ####
 #create this database for each year from 2004 to 2019 using a 5 year average
 for (i in c(2004:2019)) {
@@ -591,7 +610,7 @@ for (i in c(2004:2019)) {
 
 write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_5yr.csv', sep="/"))
 ####
-# 3 Year moving average
+# 3 Year window
 ####
 #create this database for each year from 2004 to 2019 using a 5 year average
 for (i in c(2004:2019)) {
@@ -623,7 +642,7 @@ for (i in c(2004:2019)) {
 write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_3yr.csv', sep="/"))
 
 ####
-# 1 Year moving average
+# 1 Year window
 ####
 #create this database for each year from 2004 to 2019 using a 5 year average
 for (i in c(2004:2019)) {
@@ -659,7 +678,7 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_1yr.csv', sep="
 
 
 
-```{r saver_alt}
+```{r saver_alt, eval=FALSE, include=FALSE}
 
 #function to create scored data
 

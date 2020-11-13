@@ -204,14 +204,16 @@ mapping_df <- mapping_df_raw %>%
     grepl('National Accounts',Source) ~ 'NAAG',
     grepl('Broadband',Source) ~ 'BROADBAND_DB',
     grepl('Creditor Reporting',Source) ~ 'CRS1',
+    grepl('Family', Source) ~ 'FAMILY',
     grepl('Fisheries Support',Source) ~ 'FISH_FSE',
     grepl('Government at a Glance',Source) ~ 'NAAG',
     grepl('General Government Accounts',Source) ~ 'NAAG',
     grepl('Better Life',Source) ~ 'BLI',
     grepl('Gender',Source) ~ 'GIDDB2019',
     grepl('Government at a Glance',Source) ~ 'GOV',
-    grepl('OECD Education at Glance',Source) ~ 'EAG_TRANS',
-    grepl('OECD Environment',Source) ~ 'ENV_KEI',
+    grepl('OECD Education at Glance',Source) ~ 'EDU_ENRL_INST',
+#    grepl('OECD Environment',Source) ~ 'ENV_KEI',
+    grepl('Obesity',Indicator) ~ 'HEALTH_LVNG',
     grepl('Health',Source) ~ 'HEALTH_STAT',
     grepl('OECD ICT Access and Usage',Source) ~ 'ICT_HH2',
     grepl('IDD|Income',Source) ~ 'IDD',
@@ -254,7 +256,12 @@ for (variable in database_list$database_id) {
     
     write_excel_csv(temp_indicators,
                   paste0(raw_dir,"/oecd_data/",variable,'_indicators.csv') )
+  } else {
+    temp_indicators <- read_csv(paste0(raw_dir,"/oecd_data/",variable,'_indicators.csv'))
+    assign(paste0(variable,'_indicators'), temp_indicators )
+
   }
+  
   assign(paste0(variable,'_structure'), dstruc )
   
 
@@ -443,6 +450,112 @@ flextable(sdg2_map) %>%
 
 
 ```
+```{r sdg2pull}
+
+######
+#2.2.2
+variable <- 'HEALTH_LVNG'
+
+indicator_2.2.2 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('BODY', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_2.2.2','available', 'SDG 2.2.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_2.2.2_UNSD <- un_sdg_df %>%
+  filter(code=="2.2.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_2.2.2_UNSD','ind_quality', 'SDG 2.2.2 - UNSD Data')
+
+
+######
+#2.4.1
+variable <- 'AEI_NUTRIENTS'
+
+indicator_2.4.1 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COUNTRY,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('B0', INDICATOR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_2.4.1','available', 'SDG 2.4.1 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_2.4.1_UNSD <- un_sdg_df %>%
+  filter(code=="2.4.1") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_2.4.1_UNSD','ind_quality', 'SDG 2.4.1 - UNSD Data')
+
+# ######
+# #2.a.2
+# variable <- 'CRS1'
+# 
+# CRS1_indicators <-  get_dataset(variable,
+#                                 start_time=2004,
+#                                 end_time=2019) 
+# 
+# indicator_2.a.2 <- CRS1_indicators%>%
+#   mutate(iso3c=COUNTRY,
+#          date=as.numeric(obsTime)) %>%
+#   filter(grepl('B0', INDICATOR)) %>%
+#   right_join(iso_empty) %>%
+#   filter(iso3c %in% oecd_list) %>%
+#   left_join(iso3c) %>%
+#   mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+#   filter(between(date,date_start,date_end) ) %>%
+#   group_by(iso3c) %>%
+#   summarise(available=mean(available, na.rm=T)) %>%
+#   mutate(date=date_end)
+# 
+# spi_mapper('indicator_2.a.2','available', 'SDG 2.a.2 - OECD Data')
+# 
+# #pull from UNSD data to compare
+# indicator_2.a.2_UNSD <- un_sdg_df %>%
+#   filter(code=="2.a.2") %>%
+#   filter(iso3c %in% oecd_list) %>%
+#   filter(between(date,date_start,date_end) ) %>%
+#   left_join(iso3c) %>%
+#   group_by(iso3c) %>%
+#   summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+#   mutate(date=date_end) 
+# 
+# 
+# spi_mapper('indicator_2.a.2_UNSD','ind_quality', 'SDG 2.a.2 - UNSD Data')
+
+
+
+```
 
 # SDG 3
 
@@ -461,7 +574,363 @@ flextable(sdg3_map) %>%
 
 
 ```
+```{r sdg3pull}
 
+######
+#3.1.1
+variable <- 'HEALTH_STAT'
+
+indicator_3.1.1 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('MATIMATM', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.1.1','available', 'SDG 3.1.1 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.1.1_UNSD <- un_sdg_df %>%
+  filter(code=="3.1.1") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.1.1_UNSD','ind_quality', 'SDG 3.1.1 - UNSD Data')
+
+######
+#3.2.1
+variable <- 'HEALTH_STAT'
+
+indicator_3.2.1 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('MATIINFA', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.2.1','available', 'SDG 3.2.1 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.2.1_UNSD <- un_sdg_df %>%
+  filter(code=="3.2.1") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.2.1_UNSD','ind_quality', 'SDG 3.2.1 - UNSD Data')
+
+######
+#3.2.2
+variable <- 'HEALTH_STAT'
+
+indicator_3.2.2 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('MATINEON', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.2.2','available', 'SDG 3.2.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.2.2_UNSD <- un_sdg_df %>%
+  filter(code=="3.2.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.2.2_UNSD','ind_quality', 'SDG 3.2.2 - UNSD Data')
+
+######
+#3.3.1
+variable <- 'HEALTH_STAT'
+
+indicator_3.3.1 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('HIV|AIDS', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.3.1','available', 'SDG 3.3.1 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.3.1_UNSD <- un_sdg_df %>%
+  filter(code=="3.3.1") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.3.1_UNSD','ind_quality', 'SDG 3.3.1 - UNSD Data')
+
+
+######
+#3.3.2
+variable <- 'HEALTH_STAT'
+
+indicator_3.3.2 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('CICDTBLS|PLYLTBLS', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.3.2','available', 'SDG 3.3.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.3.2_UNSD <- un_sdg_df %>%
+  filter(code=="3.3.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.3.2_UNSD','ind_quality', 'SDG 3.3.2 - UNSD Data')
+
+######
+#3.3.4
+variable <- 'HEALTH_STAT'
+
+indicator_3.3.4 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('COMDIHPB', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.3.4','available', 'SDG 3.3.4 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.3.4_UNSD <- un_sdg_df %>%
+  filter(code=="3.3.4") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.3.4_UNSD','ind_quality', 'SDG 3.3.4 - UNSD Data')
+
+######
+#3.4.2
+variable <- 'HEALTH_STAT'
+
+indicator_3.4.2 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('CICDHARM|PLYLHARM', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.4.2','available', 'SDG 3.4.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.4.2_UNSD <- un_sdg_df %>%
+  filter(code=="3.4.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.4.2_UNSD','ind_quality', 'SDG 3.4.2 - UNSD Data')
+
+######
+#3.5.2
+variable <- 'HEALTH_LVNG'
+
+indicator_3.5.2 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('ACOL', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.5.2','available', 'SDG 3.5.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.5.2_UNSD <- un_sdg_df %>%
+  filter(code=="3.5.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.5.2_UNSD','ind_quality', 'SDG 3.5.2 - UNSD Data')
+
+
+######
+#3.6.1
+variable <- 'HEALTH_STAT'
+
+indicator_3.6.1 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('INJRACIR', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.6.1','available', 'SDG 3.6.1 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.6.1_UNSD <- un_sdg_df %>%
+  filter(code=="3.6.1") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.6.1_UNSD','ind_quality', 'SDG 3.6.1 - UNSD Data')
+
+######
+#3.7.2
+variable <- 'FAMILY'
+
+indicator_3.7.2 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('FAM20', IND)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.7.2','available', 'SDG 3.7.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.7.2_UNSD <- un_sdg_df %>%
+  filter(code=="3.7.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.7.2_UNSD','ind_quality', 'SDG 3.7.2 - UNSD Data')
+
+######
+#3.9.3
+variable <- 'HEALTH_STAT'
+
+indicator_3.9.3 <- get(paste0(variable, "_indicators")) %>%
+  mutate(iso3c=COU,
+         date=as.numeric(obsTime)) %>%
+  filter(grepl('POSN', VAR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+spi_mapper('indicator_3.9.3','available', 'SDG 3.9.3 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_3.9.3_UNSD <- un_sdg_df %>%
+  filter(code=="3.9.3") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+spi_mapper('indicator_3.9.3_UNSD','ind_quality', 'SDG 3.9.3 - UNSD Data')
+
+```
 # SDG 4
 
 ```{r sdg4}
@@ -479,6 +948,111 @@ flextable(sdg4_map) %>%
 
 
 ```
+
+
+
+```{r sdg4pull}
+
+date_start <- 2015
+date_end <- 2019
+
+######
+#4.1.1
+
+
+#pull from UNSD data to compare
+indicator_4.1.1_UNSD <- un_sdg_df %>%
+  filter(code=="4.1.1") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+
+
+spi_mapper('indicator_4.1.1_UNSD','ind_quality', 'SDG 1.2.1 - UNSD Data')
+
+######
+#4.2.2
+
+
+variable <- "EDU_ENRL_INST"
+
+indicator_4.2.2 <- read_csv(paste0(raw_dir,"/oecd_data/",variable,'_indicators.csv')) %>%
+    mutate(iso3c=COUNTRY,
+         date=obsTime) %>%
+  filter(grepl('PIAAC_AL_FNFAET12|PIAAC_PERC_ANY_ED_BY_LIT', INDICATOR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+
+
+spi_mapper('indicator_4.2.2','available', 'SDG 4.2.2 - OECD Data')
+
+#pull from UNSD data to compare
+indicator_4.2.2_UNSD <- un_sdg_df %>%
+  filter(code=="4.2.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+
+
+spi_mapper('indicator_4.2.2_UNSD','ind_quality', 'SDG 4.2.2 - UNSD Data')
+
+######
+#1.a.2
+variable <- "NAAG"
+
+indicator_1.a.2 <- read_csv(paste0(raw_dir,"/oecd_data/",variable,'_indicators.csv')) %>%
+    mutate(iso3c=LOCATION,
+         date=obsTime) %>%
+  filter(grepl('TLYCG', INDICATOR)) %>%
+  right_join(iso_empty) %>%
+  filter(iso3c %in% oecd_list) %>%
+  left_join(iso3c) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  mutate(available=if_else(!is.na(obsValue),1,0)) %>%
+  group_by(iso3c) %>%
+  summarise(available=mean(available, na.rm=T)) %>%
+  mutate(date=date_end)
+
+
+spi_mapper('indicator_1.a.2','available', 'SDG 1.a.2 - OECD Data')
+
+
+#pull from UNSD data to compare
+indicator_1.a.2_UNSD <- un_sdg_df %>%
+  filter(code=="1.a.2") %>%
+  filter(iso3c %in% oecd_list) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  left_join(iso3c) %>%
+  filter(between(date,date_start,date_end) ) %>%
+  group_by(iso3c) %>%
+  summarise(ind_quality=mean(ind_quality, na.rm=T)) %>%
+  mutate(date=date_end) 
+
+
+
+
+spi_mapper('indicator_1.a.2_UNSD','ind_quality', 'SDG 1.a.2 - UNSD Data')
+
+```
+
 
 # SDG 5
 
