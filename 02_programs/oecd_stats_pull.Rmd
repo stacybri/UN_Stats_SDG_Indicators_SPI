@@ -169,7 +169,7 @@ spi_mapper  <- function(data, indicator, title) {
 #define function to pull data from UN Stats and return
 un_pull <- function(series,start, end) {
   # jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&timePeriodStart=',start,'&timePeriodEnd=',end,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
-      jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
+      jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&pageSize=50000',sep=""), flatten = TRUE)$data %>%
 
     as_tibble() %>%
     mutate(date=timePeriodStart) %>%

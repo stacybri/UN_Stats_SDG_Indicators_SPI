@@ -33,9 +33,9 @@ output_dir <- paste(dir, '03_output_data', sep="/")
 iso3c <- read_csv(paste(raw_dir,'iso_codes.csv', sep="/"),
                   col_types=list(col_character(), col_character(), col_character()))
 
-span <- c(2004:2019)
+span <- c(2004:2020)
 
-#now create dataframe for merging from 2004 to 2019
+#now create dataframe for merging from 2004 to 2020
 iso_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='date') %>%
   mutate(date=as.numeric(date)+span[1]-1) %>%
   select(iso3c, date, geoAreaCode) 
@@ -60,7 +60,7 @@ spi_mapper  <- function(data, indicator, title) {
  
  
   map_df <- get(data) %>%
-    filter(between(date,2014,2019) ) %>%
+    filter(between(date,2014,2020) ) %>%
     filter(goal==indicator) %>%
     filter(!is.na(ind_quality)) %>%
     group_by(iso3c, date, code) %>%
@@ -233,7 +233,7 @@ list_df <- jsonlite::fromJSON(indicators_url, flatten = TRUE) %>%
 #define function to pull data from UN Stats and return
 un_pull <- function(series,start, end) {
   # jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&timePeriodStart=',start,'&timePeriodEnd=',end,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
-      jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
+      jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&pageSize=50000',sep=""), flatten = TRUE)$data %>%
 
     as_tibble() %>%
     mutate(date=timePeriodStart) %>%
@@ -244,6 +244,7 @@ un_pull <- function(series,start, end) {
              (available & attributes.Nature=='CA') ~ 1,
              (available & (attributes.Nature=='E' | attributes.Nature=='G')) ~ 1,
              (available & attributes.Nature=='M') ~ 0,
+             attributes.Nature=='N' ~ as.numeric(NA), #these indicators aren't relevenat for countries.
              !available ~ 0
            )) %>%
     group_by(date) %>%
@@ -274,7 +275,7 @@ for (series in list_df$code1) {
       mutate(
       values = map(
         code1,
-        un_pull,'2000','2019' )
+        un_pull,'2000','2020' )
       ) %>%
       unnest(values) %>%
       select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality) %>%
@@ -415,7 +416,7 @@ spi_mapper('un_sdg_df_grp', 'institutinoal','Institutional Statistics (SDG goal 
 ```{r country_stats}
 
 stats_df <- un_sdg_df %>%
-  filter(between(date,2015,2019) ) %>%
+  filter(between(date,2015,2020) ) %>%
     group_by( iso3c, goal,target) %>%
     summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
               ind_available=100*max(!is.na(ind_value))
@@ -439,7 +440,7 @@ stats_df_wide <- stats_df %>%
 
 #overall sumstats
   stats_sum <- un_sdg_df %>%
-    filter(between(date,2015,2019) ) %>%
+    filter(between(date,2015,2020) ) %>%
     group_by( iso3c, goal,target) %>%
     summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
               ind_available=100*max(!is.na(ind_value))
@@ -452,7 +453,7 @@ stats_df_wide <- stats_df %>%
     mutate(goal=paste('SDG Goal', goal, sep=" ")) %>%
     select(goal,  ind_available, ind_quality)
   
-          DT::datatable(stats_sum, caption="Table of Overall Scores by Goal in 2019",
+          DT::datatable(stats_sum, caption="Table of Overall Scores by Goal in 2020",
                       rownames=FALSE,
                       colnames = c("SDG Goal",'Percent Indicators Available over 5 Year Period (2015-19)', "5 Year Average of SPI Score (Availability + Quality) Measure (Scale 0-100)"),
                       class='cell-border stripe',
@@ -466,7 +467,7 @@ stats_df_wide <- stats_df %>%
                           ordering=F))
 
 
-        DT::datatable(stats_df, caption="Table of Scores by Country in 2019",
+        DT::datatable(stats_df, caption="Table of Scores by Country in 2020",
                       rownames=FALSE,
                       colnames = c("ISO3c", "Country Name","Region", "Income", "SDG Goal",'Percent Indicators Available over 5 Year Period (2015-19)', "5 Year Average of SPI Score (Availability + Quality) Measure (Scale 0-100)"),
                       class='cell-border stripe',
@@ -517,8 +518,8 @@ un_aki_fun <- function(date_start, date_end) {
 ####
 # 10 Year window
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2009:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2009:2020)) {
   
   start=i-9
   end=i
@@ -531,7 +532,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2009:2019)) {
+for (i in c(2009:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -549,8 +550,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_10yr.csv', sep=
 ####
 # 8 Year window
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2007:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2007:2020)) {
   
   start=i-7
   end=i
@@ -563,7 +564,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2007:2019)) {
+for (i in c(2007:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -581,8 +582,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_8yr.csv', sep="
 ####
 # 5 Year window
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2004:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2004:2020)) {
   
   start=i-4
   end=i
@@ -595,7 +596,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2019)) {
+for (i in c(2004:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -612,8 +613,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_5yr.csv', sep="
 ####
 # 3 Year window
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2004:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2004:2020)) {
   
   start=i-2
   end=i
@@ -626,7 +627,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2019)) {
+for (i in c(2004:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -644,8 +645,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_3yr.csv', sep="
 ####
 # 1 Year window
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2004:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2004:2020)) {
   
   start=i-0
   end=i
@@ -658,7 +659,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2019)) {
+for (i in c(2004:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -710,8 +711,8 @@ un_aki_fun <- function(date_start, date_end) {
 ####
 # 10 Year moving average
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2009:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2009:2020)) {
   
   start=i-9
   end=i
@@ -724,7 +725,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2009:2019)) {
+for (i in c(2009:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -742,8 +743,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_10yr_alt.csv', 
 ####
 # 8 Year moving average
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2007:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2007:2020)) {
   
   start=i-7
   end=i
@@ -756,7 +757,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2007:2019)) {
+for (i in c(2007:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -774,8 +775,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_8yr_alt.csv', s
 ####
 # 5 Year moving average
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2004:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2004:2020)) {
   
   start=i-4
   end=i
@@ -788,7 +789,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2019)) {
+for (i in c(2004:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -805,8 +806,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_5yr_alt.csv', s
 ####
 # 3 Year moving average
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2004:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2004:2020)) {
   
   start=i-2
   end=i
@@ -819,7 +820,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2019)) {
+for (i in c(2004:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -837,8 +838,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_3yr_alt.csv', s
 ####
 # 1 Year moving average
 ####
-#create this database for each year from 2004 to 2019 using a 5 year average
-for (i in c(2004:2019)) {
+#create this database for each year from 2004 to 2020 using a 5 year average
+for (i in c(2004:2020)) {
   
   start=i-0
   end=i
@@ -851,7 +852,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2019)) {
+for (i in c(2004:2020)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -903,7 +904,7 @@ We will produce scatter plots between these indicators and the indicators pulled
 #read in the SPI data with the AKI
 aki_df <- read_csv(paste(raw_dir, 'SPI_data.csv', sep='/')) %>%
   select(country, iso3c, date, starts_with('SPI.D3')) %>%
-  filter(date==2019)
+  filter(date==2020)
 
 title <- "Scatterplot of SPI Score for SDG Goal 1 Based on Average Score of All SDG Indicators Versus Score Based on AKI"
 
