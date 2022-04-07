@@ -13,8 +13,8 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.height=7, f
 
 library(tidyverse)
 library(here)
-library(wbgmaps)
-library(wbggeo)
+# library(wbgmaps)
+# library(wbggeo)
 library(ggthemes)
 library(Hmisc)
 library(httr)
@@ -45,9 +45,21 @@ iso_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='da
 ```{r programs, include=FALSE}
 
 
-#Now map the result
-quality = "high"
-maps <- wbgmaps::wbgmaps[[quality]]
+#For mapping the result
+# quality = "high"
+# maps <- wbgmaps::wbgmaps[[quality]]
+#load world bank map data
+load(paste0(raw_dir, '/misc/maps.Rdata'))
+standard_crop_wintri <- function() {
+  l <- list(
+    left=-12000000, right=16396891,
+    top=9400000, bottom=-6500000
+  )
+  l$xlim <- c(l$left, l$right)
+  l$ylim <- c(l$bottom, l$top)
+  l
+}
+
 
 country_metadata <- wbstats::wbcountries()
 
@@ -242,6 +254,7 @@ un_pull <- function(series,start, end) {
            quality=case_when(
              (available & attributes.Nature=='C') ~ 1,
              (available & attributes.Nature=='CA') ~ 1,
+             (available & is.na(attributes.Nature)) ~ 1,
              (available & (attributes.Nature=='E' | attributes.Nature=='G')) ~ 1,
              (available & attributes.Nature=='M') ~ 0,
              attributes.Nature=='N' ~ as.numeric(NA), #these indicators aren't relevenat for countries.
