@@ -246,30 +246,17 @@ un_pull <- function(series,start, end) {
 
 ## Intro
 
-In this project, we will pull indicator data from OECD database and judge OECD countries based on this data. Follow methodological approach in Measuring Distance to the SDG Targets 2019: An Assessment of Where OECD Countries Stand.
+In this project, we will pull indicator data from OECD database and judge OECD countries based on this data. Follow methodological approach in The Short and Winding Road to 2030: Measuring Distance to the SDG Targets, published in April 2022.
 
-url: https://www.oecd.org/sdd/measuring-distance-to-the-sdg-targets-2019-a8caf3fa-en.htm
+url: https://www.oecd.org/wise/measuring-distance-to-the-sdgs-targets.htm
 
 First, we will read in a csv file that I put together based on the metadata provided by the OECD on their approach.  Metadata is here: https://www.oecd.org/sdd/OECD-Measuring-Distance-to-SDGs-Targets-Metadata.pdf
 
 The file provides a mapping, put together by the OECD, between the SDG targets and OECD indicators.  There are 132 targets that are mapped.
 
 
+Next, using this mapping we will pull a select set of indicators from the OECD database.  We retrieved a spreadsheet containing the indicator values and metadata for  OECD countries from the OECD website.  
 
-Next, using this mapping we will pull a select set of indicators from the OECD database.  We retrieved a spreadsheet containing the indicator values and metadata for 36 OECD countries (the United States was not included) from the OECD website.  The individual links are below to the spreadsheets:
-
-```{r oecd_links, echo=FALSE}
-
-oecd_data_links <- read_csv(paste(raw_dir,'oecd_data/country_data/OECD_data_links.csv', sep="/"))
-
-flextable(oecd_data_links) %>%
-  add_header_lines('Table: OECD Data Information') %>% 
-  autofit() %>%
-  theme_zebra() %>%
-  align( align = "left", part = "body") %>%
-  align_text_col()
-
-```
 
 # Read in Data
 
@@ -277,35 +264,61 @@ Next, we will pull the data from each country based on the OECD SDG report.
 
 ```{r read_data}
 
-#function to download data from hyperlink from OECD
-hyper_read <-  function(hyperlink) {
-  url <- hyperlink
-  temp <- tempfile()
-  download.file(url, temp, mode="wb")
-  temp_df <- read_excel(path=temp,
-                        skip=8) %>%
-    #as_tibble(.name_repair='universal') %>%
-  rename_all(~str_replace_all(., "\\s+", "")) %>%
-  rename(date=Year,
-         code=Code
-         ) %>% #get names to conform with UN SD database
-  mutate(goal=str_sub(code,1,2),
-         goal=str_replace_all(goal, "\\.", "")) %>%
+goal_1_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-2-people.xlsx"),
+                        sheet="Goal 1")
+goal_2_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-2-people.xlsx"),
+                        sheet="Goal 2")
+goal_3_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-2-people.xlsx"),
+                        sheet="Goal 3")
+goal_4_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-2-people.xlsx"),
+                        sheet="Goal 4")
+goal_5_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-2-people.xlsx"),
+                        sheet="Goal 5")
+
+goal_6_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-3-planet.xlsx"),
+                        sheet="Goal 6")
+goal_7_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-4-prosperity.xlsx"),
+                        sheet="Goal 7")
+goal_8_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-4-prosperity.xlsx"),
+                        sheet="Goal 8")
+goal_9_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-4-prosperity.xlsx"),
+                        sheet="Goal 9")
+goal_10_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-4-prosperity.xlsx"),
+                        sheet="Goal 10")
+goal_11_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-4-prosperity.xlsx"),
+                        sheet="Goal 11")
+
+goal_12_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-3-planet.xlsx"),
+                        sheet="Goal 12")
+goal_13_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-3-planet.xlsx"),
+                        sheet="Goal 12")
+goal_14_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-3-planet.xlsx"),
+                        sheet="Goal 14")
+goal_15_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-3-planet.xlsx"),
+                        sheet="Goal 15")
+
+goal_16_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-5-peace-and-partnerships.xlsx"),
+                        sheet="Goal 16")
+goal_17_df <- read_excel(path=paste0(raw_dir, "/oecd_data/data_2022/the-short-and-winding-road-to-2030-data-chapter-5-peace-and-partnerships.xlsx"),
+                        sheet="Goal 17")
+
+
+oecd_raw_df <- bind_rows(goal_1_df, goal_2_df, goal_3_df, goal_4_df, goal_5_df,
+                         goal_6_df, goal_7_df, goal_8_df, goal_9_df, goal_10_df,
+                         goal_11_df, goal_12_df, goal_13_df, goal_14_df, goal_15_df,
+                         goal_16_df, goal_17_df) %>%
+  rename(date=YEAR,
+         code=Indicator,
+         goal=Goal,
+         target=Target,
+         iso3c=iso3
+         ) %>%
+  mutate(goal=as.character(goal)) %>%
   right_join(list_df)
-}
 
-#sweden_df <- hyper_read('http://dx.doi.org/10.1787/888933964051')
-
-oecd_raw_df <- oecd_data_links %>%
-  mutate(data=map( #loop across hyperlinks downloading data
-    hyperlink,
-    hyper_read
-  )) %>%
-  select(-country) %>%
-  unnest()
 
 write_excel_csv(oecd_raw_df,
-                path=paste(raw_dir,'/oecd_data/country_data/OECD_data_',Sys.Date(),',.csv', sep=""))
+                file=paste(raw_dir,'/oecd_data/country_data/OECD_data_',Sys.Date(),',.csv', sep=""))
 
 ```
 
@@ -314,18 +327,16 @@ write_excel_csv(oecd_raw_df,
 ```{r data_clean}
 
 oecd_df <- oecd_raw_df %>%
-  select(iso3c, Indicator, PrimarySource, Value, date, code, goal) %>%
-  filter(!is.na(code))  #drop rows with no informatino on indicators
-
+  select(iso3c, SeriesCode, value, date, code, goal) %>%
+  filter(!is.na(code)) %>% #drop rows with no informatino on indicators
+  filter(!is.na(iso3c))
 
 oecd_fill_df <- oecd_df %>%
   complete(iso3c, code, date) %>% #rectangularize data to put data in country*indicator*year format
   filter(!is.na(date)) %>%
-  mutate(goal=str_sub(code,1,2),
-         goal=str_replace_all(goal, "\\.", "")) %>%
-  mutate(ind_value=Value, #form some variables matching what was done in UN SD database
+  mutate(ind_value=value, #form some variables matching what was done in UN SD database
          ind_quality=if_else(!is.na(ind_value),1,0),
-         ind_metadata=PrimarySource
+         ind_metadata=SeriesCode
         ) %>%
   left_join(wbstats::wb_countries()) 
   
@@ -336,7 +347,7 @@ oecd_fill_df %>%
          ind_quality.oecd=ind_quality, 
          ind_metadata.oecd=ind_metadata) %>%
   write_excel_csv(
-                path=paste(raw_dir,'/oecd_data/country_data/OECD_data_scored.csv', sep=""))
+                path=paste(raw_dir,'/oecd_data/country_data/OECD_data_scored_2022.csv', sep=""))
   
 ```
 

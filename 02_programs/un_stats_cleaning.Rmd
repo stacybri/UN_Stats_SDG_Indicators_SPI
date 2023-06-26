@@ -1,7 +1,7 @@
 ---
 title: "UN Data Pull and Cleaning"
 author: "Brian Stacy"
-date: "8/14/2020"
+date: "8/14/2021"
 output:
   html_document: default
   pdf_document: default
@@ -33,12 +33,17 @@ output_dir <- paste(dir, '03_output_data', sep="/")
 iso3c <- read_csv(paste(raw_dir,'iso_codes.csv', sep="/"),
                   col_types=list(col_character(), col_character(), col_character()))
 
-span <- c(2004:2020)
+span <- c(2004:2021)
 
-#now create dataframe for merging from 2004 to 2020
+#now create dataframe for merging from 2004 to 2021
 iso_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='date') %>%
   mutate(date=as.numeric(date)+span[1]-1) %>%
   select(iso3c, date, geoAreaCode) 
+
+#parameters
+upper_year = 2021
+lower_year = 2004
+window=upper_year-lower_year #set the window
 
 ```
 
@@ -72,7 +77,7 @@ spi_mapper  <- function(data, indicator, title) {
  
  
   map_df <- get(data) %>%
-    filter(between(date,2014,2020) ) %>%
+    filter(between(date,2016,2021) ) %>%
     filter(goal==indicator) %>%
     filter(!is.na(ind_quality)) %>%
     group_by(iso3c, date, code) %>%
@@ -227,52 +232,89 @@ Now we will pull data from the UN Stats API (https://unstats.un.org/SDGAPI/swagg
 
 #get a list of all SDG indicators
 indicators_url <- 'https://unstats.un.org/SDGAPI/v1/sdg/Indicator/List?pageSize=10000'
+indicators_query <- GET(indicators_url)
 
 #bring in the list of indicators
-list_df <- jsonlite::fromJSON(indicators_url, flatten = TRUE) %>%
+list_df <- jsonlite::fromJSON(rawToChar(indicators_query$content), flatten = TRUE) %>%
   as_tibble() %>%
-  unnest(keep_empty = TRUE) %>%
-  filter(tier==1)  # keep just the tier 1 indicators %>%
+  unnest(keep_empty = TRUE) 
+  #filter(tier==1)  # keep just the tier 1 indicators %>%
   # group_by(code) %>%
   # filter(row_number()==1)
 
+# get list of tier 1 indicaors
+tier1_list <- list_df %>%
+  filter(tier==1)
+
+tier1_list <- tier1_list$code1
 ```
 
-```{r api_download, include=FALSE}
+
+
+Download raw data
+```{r}
+for (series in list_df$code1) {
+    if (!file.exists(paste(raw_dir,'/sdg_data/raw/',series,'_raw.csv',sep=""))) {
+    print(series)
+      tryCatch({
+        url <- "https://unstats.un.org/SDGAPI/v1/sdg/Series/DataCSV"
+        head <- add_headers(`Content-Type` = "application/x-www-form-urlencoded")
+        httr::POST(url, head, accept('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+                   body=paste0('seriesCodes=',series,'&timePeriodStart=,',lower_year,'&timePeriodEnd=',upper_year),
+                   #content_type_json(),
+                   write_disk(paste(raw_dir,'/sdg_data/raw/',series,'_raw.csv',sep=""), overwrite=TRUE) )
+      }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+    }
+}
+
+```
+
+
+
+```{r api_download, echo=FALSE}
 
 # now we will loop through the list of indicators and download the SDG databases
 
-#define function to pull data from UN Stats and return
+
 un_pull <- function(series,start, end) {
   # jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&timePeriodStart=',start,'&timePeriodEnd=',end,'&pageSize=10000',sep=""), flatten = TRUE)$data %>%
-      jsonlite::fromJSON(paste('https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=',series,'&pageSize=50000',sep=""), flatten = TRUE)$data %>%
-
-    as_tibble() %>%
-    mutate(date=timePeriodStart) %>%
+    read_csv(paste(raw_dir,'/sdg_data/raw/',series,'_raw.csv',sep="")) %>%
+        mutate(date=as.numeric(TimePeriod),
+               Nature=`[Nature]`,
+           geoAreaCode =as.character(GeoAreaCode) ) %>%
+    left_join(iso3c) %>%
     right_join(iso_empty) %>%
-    mutate(available=!is.na(value),  #check whether indicator is available
+    mutate(available=!is.na(Value ),  #check whether indicator is available
            quality=case_when(
-             (available & attributes.Nature=='C') ~ 1,
-             (available & attributes.Nature=='CA') ~ 1,
-             (available & is.na(attributes.Nature)) ~ 1,
-             (available & (attributes.Nature=='E' | attributes.Nature=='G')) ~ 1,
-             (available & attributes.Nature=='M') ~ 0,
-             attributes.Nature=='N' ~ as.numeric(NA), #these indicators aren't relevenat for countries.
+             (available & Nature=='C') ~ 1,
+             (available & Nature=='CA') ~ 1,
+             (available & is.na(Nature)) ~ 1,
+             (available & (Nature=='E' | Nature=='G')) ~ 1,
+             (available & Nature=='M') ~ 0,
+             Nature=='N' ~ as.numeric(NA), #these indicators aren't relevenat for countries.
              !available ~ 0
            )) %>%
     group_by(date) %>%
     mutate(available_year=(max(available, na.rm=T)==1),
            quality=if_else(available_year==FALSE,as.numeric(NA),quality)) %>% #check if indicator is available at all for that year for any country.  If not, then do not penalize countries for not reporting.
     group_by(iso3c, date) %>%
-    summarise(ind_value=mean(as.numeric(value), na.rm=T),
-              ind_metadata=first(attributes.Nature),
+    summarise(ind_value=mean(as.numeric(Value ), na.rm=T),
+              ind_metadata=first(Nature),
               ind_quality=mean(quality, na.rm=T)
               ) 
 }  
 
 
 
-list_df<- list_df[seq(dim(list_df)[1],1),]
+
+```
+
+```{r api_download2, include=FALSE}
+
+# now we will loop through the list of indicators and download the SDG databases
+
+
+# list_df<- list_df[seq(dim(list_df)[1],1),]
 
 #loop through all sdg indicators and append to a database containing the value, metadata info, and quality measure for each year and couuntry.
 for (series in list_df$code1) {
@@ -288,7 +330,7 @@ for (series in list_df$code1) {
       mutate(
       values = map(
         code1,
-        un_pull,'2000','2020' )
+        un_pull,'2000','2021' )
       ) %>%
       unnest(values) %>%
       select(iso3c, date, goal, target, code, code1, description1, ind_value, ind_metadata, ind_quality) %>%
@@ -342,13 +384,15 @@ for (series in list_df$code1) {
 
 
 #read in OECD data for updates based on OECD database
-oecd_df <- read_csv(paste(raw_dir,'/oecd_data/country_data/OECD_data_scored.csv', sep=""))
+oecd_df <- read_csv(paste(raw_dir,'/oecd_data/country_data/OECD_data_scored_2022.csv', sep=""))
 
 un_sdg_df <- un_sdg_df %>%
   mutate(goal=as.numeric(goal)) %>%
   left_join(oecd_df) %>%
   mutate(goal=as.character(goal)) %>%
-  mutate(ind_quality=if_else(ind_quality.oecd>ind_quality,ind_quality.oecd,ind_quality, ind_quality )) #replace value with OECD value if it exists
+  mutate(
+    ind_quality.sdg=ind_quality,
+    ind_quality=if_else(ind_quality.oecd>ind_quality,ind_quality.oecd,ind_quality, ind_quality )) #replace value with OECD value if it exists
 
 #save the data file
   
@@ -357,39 +401,79 @@ write_excel_csv(un_sdg_df, paste(output_dir, '/un_sdg_df.csv',sep=""))
 
 ```
 
+```{r shape, cache=cacher}
+
+
+
+####
+#create two empty datasets to merge onto
+####
+
+#read list of iso3c codes for matching from UN (https://unstats.un.org/unsd/methodology/m49/)
+iso3c <- read_csv(paste(raw_dir,'metadata/iso_codes.csv', sep="/"),
+                  col_types=list(col_character(), col_character(), col_character())) %>%
+  select(iso3c) %>%
+  left_join(wbstats::wb_countries()) %>%
+  filter(!is.na(region))
+
+
+# start by creating empty dataset with country by year
+sdg_temp_df_empty <- bind_rows(replicate(length(span), iso3c, simplify = FALSE), .id='date') %>%
+  mutate(date=as.numeric(date)+span[1]-1) %>%
+  filter(region!="Aggregates") %>% # take out the aggregates (LAC, SAR, etc)
+  select(iso3c, date)
+
+#now append to get country by year by series
+sdg_df_empty <- map_dfr(list_df$code1, ~(sdg_temp_df_empty %>% mutate(code1=.x)))
+
+
+
+
+#create database of gender indicators whether they exist at all
+  un_sdg_filled_df <-  sdg_df_empty %>%
+    left_join(un_sdg_df) %>%
+  mutate(ind_quality=if_else(is.na(ind_quality), 0,ind_quality),
+         ind_quality.sdg=if_else(is.na(ind_quality.sdg), 0,ind_quality.sdg))
+  
+    
+  write_excel_csv(un_sdg_filled_df, paste(output_dir, '/un_sdg_filled.csv',sep=""))
+
+  
+```
+
 # Summary Statistics by SDG Goal
 
 Below we will produce maps and statistics by region/income group of the SPI Indicators based on the UN SDG database.  This will be done according to SDG goal (1-17)
 
 ```{r sdg_goal}
 
-un_sdg_df <- read_csv(paste(output_dir,'/un_sdg_df.csv',sep=""))
+un_sdg_filled_df <- read_csv(paste(output_dir,'/un_sdg_filled.csv',sep=""))
 
 
-spi_mapper('un_sdg_df', '1','Goal 1')
+spi_mapper('un_sdg_filled_df', '1','Goal 1')
 
 
 
-spi_mapper('un_sdg_df', '2','Goal 2')
+spi_mapper('un_sdg_filled_df', '2','Goal 2')
 
-spi_mapper('un_sdg_df', '3','Goal 3')
+spi_mapper('un_sdg_filled_df', '3','Goal 3')
 
 
-spi_mapper('un_sdg_df', '4','Goal 4')
+spi_mapper('un_sdg_filled_df', '4','Goal 4')
 
-spi_mapper('un_sdg_df', '5','Goal 5')
-spi_mapper('un_sdg_df', '6','Goal 6')
-spi_mapper('un_sdg_df', '7','Goal 7')
-spi_mapper('un_sdg_df', '8','Goal 8')
-spi_mapper('un_sdg_df', '9','Goal 9')
-spi_mapper('un_sdg_df', '10','Goal 10')
-spi_mapper('un_sdg_df', '11','Goal 11')
-spi_mapper('un_sdg_df', '12','Goal 12')
-spi_mapper('un_sdg_df', '13','Goal 13')
-spi_mapper('un_sdg_df', '14','Goal 14')
-spi_mapper('un_sdg_df', '15','Goal 15')
-spi_mapper('un_sdg_df', '16','Goal 16')
-spi_mapper('un_sdg_df', '17','Goal 17')
+spi_mapper('un_sdg_filled_df', '5','Goal 5')
+spi_mapper('un_sdg_filled_df', '6','Goal 6')
+spi_mapper('un_sdg_filled_df', '7','Goal 7')
+spi_mapper('un_sdg_filled_df', '8','Goal 8')
+spi_mapper('un_sdg_filled_df', '9','Goal 9')
+spi_mapper('un_sdg_filled_df', '10','Goal 10')
+spi_mapper('un_sdg_filled_df', '11','Goal 11')
+spi_mapper('un_sdg_filled_df', '12','Goal 12')
+spi_mapper('un_sdg_filled_df', '13','Goal 13')
+spi_mapper('un_sdg_filled_df', '14','Goal 14')
+spi_mapper('un_sdg_filled_df', '15','Goal 15')
+spi_mapper('un_sdg_filled_df', '16','Goal 16')
+spi_mapper('un_sdg_filled_df', '17','Goal 17')
 
 
 # stats_fun <- 
@@ -410,7 +494,7 @@ Below we will produce maps and statistics by region/income group of the SPI Indi
 
 ```{r groups}
 
-un_sdg_df_grp <- un_sdg_df %>%
+un_sdg_filled_df_grp <- un_sdg_filled_df %>%
   mutate(goal=case_when(
     (goal == '1'| goal == '2' | goal == '3' | goal == '4' | goal == '5' | goal == '6') ~ 'social',
     (goal == '7' | goal == '8' | goal == '9' | goal == '10' | goal == '11' | goal == '12') ~ 'economic',
@@ -418,18 +502,18 @@ un_sdg_df_grp <- un_sdg_df %>%
     (goal == '16' | goal == '17') ~ 'institutinoal'
   ))
 
-spi_mapper('un_sdg_df_grp', 'social','Economic Goals (SDG 1-6)')
-spi_mapper('un_sdg_df_grp', 'economic','Economic Statistics (SDG goal 7-12)')
-spi_mapper('un_sdg_df_grp', 'environmental','Environmental Staistics (SDG goal 13-15)')
-spi_mapper('un_sdg_df_grp', 'institutinoal','Institutional Statistics (SDG goal 16-17)')
+spi_mapper('un_sdg_filled_df_grp', 'social','Economic Goals (SDG 1-6)')
+spi_mapper('un_sdg_filled_df_grp', 'economic','Economic Statistics (SDG goal 7-12)')
+spi_mapper('un_sdg_filled_df_grp', 'environmental','Environmental Staistics (SDG goal 13-15)')
+spi_mapper('un_sdg_filled_df_grp', 'institutinoal','Institutional Statistics (SDG goal 16-17)')
 
 ```
 
 
 ```{r country_stats}
 
-stats_df <- un_sdg_df %>%
-  filter(between(date,2015,2020) ) %>%
+stats_df <- un_sdg_filled_df %>%
+  filter(between(date,2015,2021) ) %>%
     group_by( iso3c, goal,target) %>%
     summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
               ind_available=100*max(!is.na(ind_value))
@@ -452,8 +536,8 @@ stats_df_wide <- stats_df %>%
 
 
 #overall sumstats
-  stats_sum <- un_sdg_df %>%
-    filter(between(date,2015,2020) ) %>%
+  stats_sum <- un_sdg_filled_df %>%
+    filter(between(date,2015,2021) ) %>%
     group_by( iso3c, goal,target) %>%
     summarise(ind_quality=100*max(ind_quality), #get a measure by country of whether indicator exists at all over 5 years
               ind_available=100*max(!is.na(ind_value))
@@ -466,7 +550,7 @@ stats_df_wide <- stats_df %>%
     mutate(goal=paste('SDG Goal', goal, sep=" ")) %>%
     select(goal,  ind_available, ind_quality)
   
-          DT::datatable(stats_sum, caption="Table of Overall Scores by Goal in 2020",
+          DT::datatable(stats_sum, caption="Table of Overall Scores by Goal in 2021",
                       rownames=FALSE,
                       colnames = c("SDG Goal",'Percent Indicators Available over 5 Year Period (2015-19)', "5 Year Average of SPI Score (Availability + Quality) Measure (Scale 0-100)"),
                       class='cell-border stripe',
@@ -480,7 +564,7 @@ stats_df_wide <- stats_df %>%
                           ordering=F))
 
 
-        DT::datatable(stats_df, caption="Table of Scores by Country in 2020",
+        DT::datatable(stats_df, caption="Table of Scores by Country in 2021",
                       rownames=FALSE,
                       colnames = c("ISO3c", "Country Name","Region", "Income", "SDG Goal",'Percent Indicators Available over 5 Year Period (2015-19)', "5 Year Average of SPI Score (Availability + Quality) Measure (Scale 0-100)"),
                       class='cell-border stripe',
@@ -497,26 +581,32 @@ stats_df_wide <- stats_df %>%
 ```
 
 
+# Save
+
 ```{r saver}
 
 #function to create scored data
+sdg_gender_tab <- read_csv(file = paste0(raw_dir, '/misc/Gender_SDGs.csv')) 
+gender_code1 <- sdg_gender_tab$Code
 
 
 un_aki_fun <- function(date_start, date_end) {
-  temp <- un_sdg_df %>%
+  temp <- un_sdg_filled_df %>%
     filter(between(date,date_start,date_end) ) %>%
     filter(!is.na(ind_quality)) %>%
+    filter(code1 %in% tier1_list) %>% #get just tier1 indicators  
     group_by(iso3c, code,goal) %>%
     summarise(ind_quality=max(ind_quality, na.rm=T),
               ind_value=mean(ind_value, na.rm=T),
               ind_metadata=first(ind_metadata)) %>% #check if any values (even sub-indicators) for indicator
       mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
       group_by(iso3c,goal) %>%
-      summarise(ind_quality=round(mean(ind_quality),3) #get whether indicator exists at all in 5 years of this across countries
+      summarise(ind_quality=round(mean(ind_quality),3),
+                ind_number=n()#get whether indicator exists at all in 5 years of this across countries
               ) %>%
     left_join(country_metadata) %>%
     filter(!is.na(region)) %>%
-    select(iso3c, country,region, income, goal, ind_quality) %>%
+    select(iso3c, country,region, income, goal, ind_quality, ind_number) %>%
     mutate(date=date_end)
   
   
@@ -528,11 +618,83 @@ un_aki_fun <- function(date_start, date_end) {
 }
 
 
+un_aki_fun_all <- function(date_start, date_end) {
+  temp <- un_sdg_filled_df %>%
+    filter(between(date,date_start,date_end) ) %>%
+    filter(!is.na(ind_quality.sdg)) %>%
+    #filter(code1 %in% tier1_list) %>% #get just tier1 indicators  
+    group_by(iso3c, code,goal) %>%
+    summarise(ind_quality=max(ind_quality.sdg, na.rm=T), #use SDG database only
+              ind_value=mean(ind_value, na.rm=T),
+              ind_metadata=first(ind_metadata)) %>% #check if any values (even sub-indicators) for indicator
+      mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
+      group_by(iso3c,goal) %>%
+      summarise(ind_quality=round(mean(ind_quality),3),
+                ind_number=n()#get whether indicator exists at all in 5 years of this across countries
+              ) %>%
+    left_join(country_metadata) %>%
+    filter(!is.na(region)) %>%
+    select(iso3c, country,region, income, goal, ind_quality, ind_number) %>%
+    mutate(date=date_end)
+  
+  temp
+
+}
+
+un_aki_fun_gender <- function(date_start, date_end) {
+  temp <- un_sdg_filled_df %>%
+    filter(between(date,date_start,date_end) ) %>%
+    filter(!is.na(ind_quality.sdg)) %>%
+    filter(code1 %in% gender_code1) %>%
+    #filter(code1 %in% tier1_list) %>% #get just tier1 indicators  
+    group_by(iso3c, code,goal) %>%
+    summarise(ind_quality=max(ind_quality.sdg, na.rm=T), #use SDG database only
+              ind_value=mean(ind_value, na.rm=T),
+              ind_metadata=first(ind_metadata)) %>% #check if any values (even sub-indicators) for indicator
+      mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
+      group_by(iso3c,goal) %>%
+      summarise(ind_quality=round(mean(ind_quality),3),
+                ind_number=n()#get whether indicator exists at all in 5 years of this across countries
+              ) %>%
+    left_join(country_metadata) %>%
+    filter(!is.na(region)) %>%
+    select(iso3c, country,region, income, goal, ind_quality, ind_number) %>%
+    mutate(date=date_end)
+  
+  temp
+
+}
+
+
+un_aki_fun_nongender <- function(date_start, date_end) {
+  temp <- un_sdg_filled_df %>%
+    filter(between(date,date_start,date_end) ) %>%
+    filter(!is.na(ind_quality.sdg)) %>%
+    filter(!(code1 %in% gender_code1)) %>%
+    #filter(code1 %in% tier1_list) %>% #get just tier1 indicators  
+    group_by(iso3c, code,goal) %>%
+    summarise(ind_quality=max(ind_quality.sdg, na.rm=T), #use SDG database only
+              ind_value=mean(ind_value, na.rm=T),
+              ind_metadata=first(ind_metadata)) %>% #check if any values (even sub-indicators) for indicator
+      mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
+      group_by(iso3c,goal) %>%
+      summarise(ind_quality=round(mean(ind_quality),3),
+                ind_number=n()#get whether indicator exists at all in 5 years of this across countries
+              ) %>%
+    left_join(country_metadata) %>%
+    filter(!is.na(region)) %>%
+    select(iso3c, country,region, income, goal, ind_quality, ind_number) %>%
+    mutate(date=date_end)
+  
+  temp
+
+}
+
 ####
 # 10 Year window
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2009:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2009:2021)) {
   
   start=i-9
   end=i
@@ -545,7 +707,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2009:2020)) {
+for (i in c(2009:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -563,8 +725,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_10yr.csv', sep=
 ####
 # 8 Year window
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2007:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2007:2021)) {
   
   start=i-7
   end=i
@@ -577,7 +739,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2007:2020)) {
+for (i in c(2007:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -595,8 +757,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_8yr.csv', sep="
 ####
 # 5 Year window
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2004:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
   
   start=i-4
   end=i
@@ -609,7 +771,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2020)) {
+for (i in c(2004:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -623,11 +785,103 @@ for (i in c(2004:2020)) {
 }
 
 write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_5yr.csv', sep="/"))
+
+#inclue all sdgs
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
+  
+  start=i-4
+  end=i
+  
+  temp_df <- un_aki_fun_all(start,end)
+  assign(paste('un_aki_',end, sep=""), temp_df)
+}
+
+if (exists('un_aki')) {
+  rm('un_aki')
+}
+#now append together and save
+for (i in c(2004:2021)) {
+  
+  temp<-get(paste('un_aki_',i, sep=""))
+  
+  if (!exists('un_aki')) {
+    un_aki<-temp
+  } else {
+    un_aki<-un_aki %>%
+      bind_rows(temp) %>%
+      arrange(-date, iso3c)
+  }
+}
+
+
+write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_alltier_data_5yr.csv', sep="/"))
+
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
+  
+  start=i-4
+  end=i
+  
+  temp_df <- un_aki_fun_gender(start,end)
+  assign(paste('un_aki_',end, sep=""), temp_df)
+}
+
+if (exists('un_aki')) {
+  rm('un_aki')
+}
+#now append together and save
+for (i in c(2004:2021)) {
+  
+  temp<-get(paste('un_aki_',i, sep=""))
+  
+  if (!exists('un_aki')) {
+    un_aki<-temp
+  } else {
+    un_aki<-un_aki %>%
+      bind_rows(temp) %>%
+      arrange(-date, iso3c)
+  }
+}
+
+
+write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_gender_data_5yr.csv', sep="/"))
+
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
+  
+  start=i-4
+  end=i
+  
+  temp_df <- un_aki_fun_nongender(start,end)
+  assign(paste('un_aki_',end, sep=""), temp_df)
+}
+
+if (exists('un_aki')) {
+  rm('un_aki')
+}
+#now append together and save
+for (i in c(2004:2021)) {
+  
+  temp<-get(paste('un_aki_',i, sep=""))
+  
+  if (!exists('un_aki')) {
+    un_aki<-temp
+  } else {
+    un_aki<-un_aki %>%
+      bind_rows(temp) %>%
+      arrange(-date, iso3c)
+  }
+}
+
+
+write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_nongender_data_5yr.csv', sep="/"))
+
 ####
 # 3 Year window
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2004:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
   
   start=i-2
   end=i
@@ -640,7 +894,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2020)) {
+for (i in c(2004:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -658,8 +912,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_3yr.csv', sep="
 ####
 # 1 Year window
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2004:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
   
   start=i-0
   end=i
@@ -672,7 +926,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2020)) {
+for (i in c(2004:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -698,7 +952,7 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_1yr.csv', sep="
 
 
 un_aki_fun <- function(date_start, date_end) {
-  temp <- un_sdg_df %>%
+  temp <- un_sdg_filled_df %>%
     filter(between(date,date_start,date_end) ) %>%
       mutate(ind_quality=if_else(is.na(ind_quality),0,ind_quality)) %>% # if the indicator is missing for a year in the database, set availability to 0.
       group_by(iso3c,goal,code) %>%
@@ -724,8 +978,8 @@ un_aki_fun <- function(date_start, date_end) {
 ####
 # 10 Year moving average
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2009:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2009:2021)) {
   
   start=i-9
   end=i
@@ -738,7 +992,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2009:2020)) {
+for (i in c(2009:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -756,8 +1010,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_10yr_alt.csv', 
 ####
 # 8 Year moving average
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2007:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2007:2021)) {
   
   start=i-7
   end=i
@@ -770,7 +1024,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2007:2020)) {
+for (i in c(2007:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -788,8 +1042,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_8yr_alt.csv', s
 ####
 # 5 Year moving average
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2004:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
   
   start=i-4
   end=i
@@ -802,7 +1056,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2020)) {
+for (i in c(2004:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -819,8 +1073,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_5yr_alt.csv', s
 ####
 # 3 Year moving average
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2004:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
   
   start=i-2
   end=i
@@ -833,7 +1087,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2020)) {
+for (i in c(2004:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -851,8 +1105,8 @@ write_excel_csv(un_aki, path=paste(output_dir, 'SPI_D3_UNSD_data_3yr_alt.csv', s
 ####
 # 1 Year moving average
 ####
-#create this database for each year from 2004 to 2020 using a 5 year average
-for (i in c(2004:2020)) {
+#create this database for each year from 2004 to 2021 using a 5 year average
+for (i in c(2004:2021)) {
   
   start=i-0
   end=i
@@ -865,7 +1119,7 @@ if (exists('un_aki')) {
   rm('un_aki')
 }
 #now append together and save
-for (i in c(2004:2020)) {
+for (i in c(2004:2021)) {
   
   temp<-get(paste('un_aki_',i, sep=""))
   
@@ -917,7 +1171,7 @@ We will produce scatter plots between these indicators and the indicators pulled
 #read in the SPI data with the AKI
 aki_df <- read_csv(paste(raw_dir, 'SPI_data.csv', sep='/')) %>%
   select(country, iso3c, date, starts_with('SPI.D3')) %>%
-  filter(date==2020)
+  filter(date==2021)
 
 title <- "Scatterplot of SPI Score for SDG Goal 1 Based on Average Score of All SDG Indicators Versus Score Based on AKI"
 
